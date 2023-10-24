@@ -100,6 +100,8 @@ class atmos(object):
         self.r0 = self.config.r0
         self.L0s = self.config.L0
         self.looptime = self.simConfig.loopTime
+        
+        # self.config.randomSeed = soapyConfig.randomSeed
 
         if self.config.randomSeed is not None:
             numpy.random.seed(self.config.randomSeed)
@@ -133,6 +135,8 @@ class atmos(object):
         logger.info('| r0 = {0:.2f} m ({1:.2f}" seeing)'.format(self.r0, numpy.degrees(0.5e-6/self.r0)*3600.0))
         logger.info("| Vbar_5/3 = {0:.2f} m/s".format(vBar53))
         logger.info("| tau0 = {0:.2f} ms".format(tau0*1e3))
+        
+        self.tau0 = tau0
 
         self.scrnPos = {}
         self.wholeScrns = {}
@@ -151,11 +155,16 @@ class atmos(object):
         if self.config.infinite:
             self.infinite_phase_screens = []
             for layer in range(self.config.scrnNo):
+                # print(layer)
                 logger.info("Initialise Infinite Phase Screen {}".format(layer+1))
+                # print('random_seed is {:d}\n'.format(self.config.randomSeed))
                 phase_screen = InfinitePhaseScreen(
                         self.scrn_size, self.pixel_scale, self.scrnStrengths[layer],
-                        self.L0s[layer], self.windSpeeds[layer], self.looptime, self.windDirs[layer])
+                        self.L0s[layer], self.windSpeeds[layer], self.looptime, self.windDirs[layer],
+                        random_seed=self.config.randomSeed)
                 self.infinite_phase_screens.append(phase_screen)
+                if (self.config.randomSeed is None) == False:
+                    self.config.randomSeed += 1
 
         else:
             if not self.config.scrnNames:
@@ -469,10 +478,10 @@ def makePhaseScreens(
         return scrns
 
 
-class InfinitePhaseScreen(infinitephasescreen.PhaseScreenVonKarman):
+class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
     def __init__(
             self, nx_size, pixel_scale, r0, L0, wind_speed,
-            time_step, wind_direction, random_seed=None, n_columns=2):
+            time_step, wind_direction, random_seed=None, stencil_length_factor=4):
 
         if wind_direction not in (0, 90, 180, 270):
             # Have to make screne bigger to cope with rotaation
@@ -481,7 +490,7 @@ class InfinitePhaseScreen(infinitephasescreen.PhaseScreenVonKarman):
         else:
             self.nx_output_size = nx_size
 
-        super(InfinitePhaseScreen, self).__init__(nx_size, pixel_scale, r0, L0, random_seed, n_columns)
+        super(InfinitePhaseScreen, self).__init__(nx_size, pixel_scale, r0, L0, random_seed, stencil_length_factor)
 
         self.wind_speed = wind_speed
         self.time_step = time_step

@@ -10,7 +10,8 @@ Includes:
   - ThreadsafeDict, ThreadsafeList - Self-mutexed data structures
 """
 
-import threading, sys, copy, collections
+import threading, sys, copy
+import collections.abc as collections
 #from debug import *
 
 try:

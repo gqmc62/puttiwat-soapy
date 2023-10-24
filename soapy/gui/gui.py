@@ -23,6 +23,11 @@ import sys
 
 # Following required in case pyqt api v1 is default (on smome linux distros)
 # Explicitly set it to get v2!
+
+from matplotlib import pyplot as plt
+plt.imshow([[0,0],[0,0]])
+plt.clf()
+
 import sip
 API_NAMES = ["QDate", "QDateTime", "QString", "QTextStream", "QTime", "QUrl", "QVariant"]
 API_VERSION = 2

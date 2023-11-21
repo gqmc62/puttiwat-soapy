@@ -100,11 +100,11 @@ class atmos(object):
         self.r0 = self.config.r0
         self.L0s = self.config.L0
         self.looptime = self.simConfig.loopTime
-        
-        # self.config.randomSeed = soapyConfig.randomSeed
 
+        self._R = None
         if self.config.randomSeed is not None:
-            numpy.random.seed(self.config.randomSeed)
+            # numpy.random.seed(self.config.randomSeed)
+            self._R = numpy.random.default_rng(self.config.randomSeed)
 
         self.config.scrnStrengths = numpy.array(self.config.scrnStrengths,
                 dtype="float32")
@@ -135,8 +135,6 @@ class atmos(object):
         logger.info('| r0 = {0:.2f} m ({1:.2f}" seeing)'.format(self.r0, numpy.degrees(0.5e-6/self.r0)*3600.0))
         logger.info("| Vbar_5/3 = {0:.2f} m/s".format(vBar53))
         logger.info("| tau0 = {0:.2f} ms".format(tau0*1e3))
-        
-        self.tau0 = tau0
 
         self.scrnPos = {}
         self.wholeScrns = {}
@@ -155,25 +153,17 @@ class atmos(object):
         if self.config.infinite:
             self.infinite_phase_screens = []
             for layer in range(self.config.scrnNo):
-                # print(layer)
+
                 logger.info("Initialise Infinite Phase Screen {}".format(layer+1))
-                # print('random_seed is {:d}\n'.format(self.config.randomSeed))
                 phase_screen = InfinitePhaseScreen(
                         self.scrn_size, self.pixel_scale, self.scrnStrengths[layer],
-                        self.L0s[layer], self.windSpeeds[layer], self.looptime, self.windDirs[layer],
-                        random_seed=self.config.randomSeed)
+                        self.L0s[layer], self.windSpeeds[layer], self.looptime, self.windDirs[layer], self._R)
                 self.infinite_phase_screens.append(phase_screen)
-                if (self.config.randomSeed is None) == False:
-                    self.config.randomSeed += 1
 
         else:
             if not self.config.scrnNames:
                 logger.info("Generating Phase Screens")
                 for i in xrange(self.scrnNo):
-                    if self.config.randomSeed is None:
-                        seed = None
-                    else:
-                        seed = self.config.randomSeed + i
 
                     logger.info("Generate Phase Screen {0}  with r0: {1:.2f}, size: {2}".format(i,self.scrnStrengths[i], self.wholeScrnSize))
                     if self.config.subHarmonics:
@@ -181,14 +171,14 @@ class atmos(object):
                                 self.wholeScrnR0,
                                 self.wholeScrnSize, self.pixel_scale,
                                 self.config.L0[i], 0.001,
-                                seed=seed
+                                seed=self._R
                                 )
                     else:
                         self.wholeScrns[i] = phasescreen.ft_phase_screen(
                                 self.wholeScrnR0,
                                 self.wholeScrnSize, self.pixel_scale,
                                 self.config.L0[i], 0.001,
-                                seed=seed
+                                seed=self._R
                                 )
 
                     self.scrns[i] = self.wholeScrns[i][:scrnSize,:scrnSize]
@@ -307,7 +297,7 @@ class atmos(object):
 
         # If random screens are required:
         if self.config.randomScrns:
-            return self.randomScrns(subHarmonics=self.config.subHarmonics)
+            return self.randomScrns(subHarmonics=self.config.subHarmonics, seed=self._R)
 
         if self.config.infinite:
             for layer_n in range(self.scrnNo):
@@ -389,7 +379,7 @@ class atmos(object):
 
         return self.scrns
 
-    def randomScrns(self, subHarmonics=True, l0=0.01):
+    def randomScrns(self, subHarmonics=True, l0=0.01, seed=None):
         """
         Generated random phase screens defined by the atmosphere object parameters.
 
@@ -403,11 +393,11 @@ class atmos(object):
             if subHarmonics:
                 self.scrns[i] = phasescreen.ft_sh_phase_screen(
                         self.scrnStrengths[i], self.scrn_size,
-                        self.pixel_scale, self.config.L0[i], l0)
+                        self.pixel_scale, self.config.L0[i], l0, seed=self._R)
             else:
                 self.scrns[i] = phasescreen.ft_phase_screen(
                         self.scrnStrengths[i], self.scrn_size,
-                        self.pixel_scale, self.config.L0[i], l0)
+                        self.pixel_scale, self.config.L0[i], l0, seed=self._R)
 
             # Turn to nm
             self.scrns[i] *= (500./(2*numpy.pi))
@@ -478,10 +468,10 @@ def makePhaseScreens(
         return scrns
 
 
-class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
+class InfinitePhaseScreen(infinitephasescreen.PhaseScreenVonKarman):
     def __init__(
             self, nx_size, pixel_scale, r0, L0, wind_speed,
-            time_step, wind_direction, random_seed=None, stencil_length_factor=4):
+            time_step, wind_direction, random_seed=None, n_columns=2):
 
         if wind_direction not in (0, 90, 180, 270):
             # Have to make screne bigger to cope with rotaation
@@ -490,7 +480,7 @@ class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
         else:
             self.nx_output_size = nx_size
 
-        super(InfinitePhaseScreen, self).__init__(nx_size, pixel_scale, r0, L0, random_seed, stencil_length_factor)
+        super(InfinitePhaseScreen, self).__init__(nx_size, pixel_scale, r0, L0, random_seed, n_columns)
 
         self.wind_speed = wind_speed
         self.time_step = time_step

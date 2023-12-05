@@ -20,7 +20,6 @@ import traceback
 import time
 
 import numpy
-from matplotlib import pyplot as plt
 
 from . import logger
 
@@ -458,24 +457,7 @@ class MVM(Reconstructor):
         Uses DM object makeIMat methods, then inverts each to create a
         control matrix
         '''
-        
-        _,svd,_ = numpy.linalg.svd(self.interaction_matrix)
-        svd /= svd.max()
-        plt.plot(svd,label='old svd')
-        plt.hlines(self.config.svdConditioning,0,len(svd),label='old svd')
-        plt.legend()
-        plt.show()
-        
-        cumulative_actuators = 0
-        old_cumulative_actuators = 0
-        for i in self.dms:
-            cumulative_actuators += self.dms[i].n_acts
-            old_iMat = self.dms[i].config.iMatValue
-            new_iMat = old_iMat/numpy.max(svd[old_cumulative_actuators:cumulative_actuators])
-            new_iMat *= (1 - 0.2*(len(self.dms) - i)/len(self.dms))
-            old_cumulative_actuators = cumulative_actuators
-            print(self.dms[i],new_iMat)
-        
+
         logger.info("Invert iMat with conditioning: {:.4f}".format(
                 self.config.svdConditioning))
         self.control_matrix = numpy.linalg.pinv(

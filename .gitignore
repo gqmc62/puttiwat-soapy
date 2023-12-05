@@ -67,4 +67,3 @@ target/
 .vscode/
 
 *.fits
-*.yaml

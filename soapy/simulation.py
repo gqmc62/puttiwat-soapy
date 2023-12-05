@@ -73,8 +73,6 @@ import shutil
 import importlib
 import threading
 
-from matplotlib import pyplot as plt
-
 import numpy
 #Use pyfits or astropy for fits file handling
 try:
@@ -360,15 +358,6 @@ class Sim(object):
         self.dmCommands = numpy.zeros(self.config.sim.totalActs)
 
         self.Timat += time.time() - t
-        
-        #Init DM Command Data saving
-        if self.config.sim.saveDmCommands:
-            ttActs = 0
-
-            self.allDmCommands = numpy.zeros( (self.config.sim.nIters, ttActs+self.config.sim.totalActs))
-
-        else:
-            self.allDmCommands = None
 
 
     def runWfs_noMP(self, scrns = None, dmShape=None, wfsList=None,
@@ -578,10 +567,6 @@ class Sim(object):
         self.combinedCorrection = self.open_correction + self.closed_correction
 
         self.runSciCams(self.combinedCorrection)
-        
-        plt.imshow(self.combinedCorrection.sum(0))
-        plt.title('dm shape at altitude')
-        plt.show()
 
         # Save Data
         i = self.iters % self.config.sim.nIters # If sim is run continuously in loop, overwrite oldest data in buffer
@@ -854,8 +839,7 @@ class Sim(object):
 
             if self.config.sim.saveSciRes:
                 for sci in xrange(self.config.sim.nSci):
-                    cut = (self.sciCams[sci].residual.shape[0] - self.sciPhase[sci][i].shape[0])//2
-                    self.sciPhase[sci][i] = self.sciCams[sci].residual[cut:-cut-1,cut:-cut-1]
+                    self.sciPhase[sci][i] = self.sciCams[sci].residual
 
         if self.config.sim.simName!=None:
             if self.config.sim.saveWfsFrames:

@@ -158,8 +158,6 @@ class atmos(object):
                 phase_screen = InfinitePhaseScreen(
                         self.scrn_size, self.pixel_scale, self.scrnStrengths[layer],
                         self.L0s[layer], self.windSpeeds[layer], self.looptime, self.windDirs[layer], self._R)
-                for row in range(self.scrn_size):
-                    phase_screen.add_row()
                 self.infinite_phase_screens.append(phase_screen)
 
         else:

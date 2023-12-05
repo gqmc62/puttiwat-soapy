@@ -168,7 +168,6 @@ class PY_Configurator(object):
         gsPos = []
         for gs in range(self.sim.nGS):
             pos = self.wfss[gs].GSPosition.astype('float')
-
             # Need to add bit if the GS is an elongated off-axis LGS
             if (hasattr(self.wfss[gs].lgs, 'elongationDepth')
                     and self.wfss[gs].lgs.elongationDepth != 0):
@@ -191,8 +190,61 @@ class PY_Configurator(object):
             maxGSPos = numpy.array(gsPos).max()
         else:
             maxGSPos = 0
-
-        self.sim.scrnSize = numpy.ceil(2*
+        
+        PHYSICAL = False
+        for iwfs in range(self.sim.nGS):
+            if self.wfss[iwfs].propagationMode == 'Physical':
+                PHYSICAL = True
+        for isci in range(self.sim.nSci):
+            if self.scis[isci].propagationMode == 'Physical':
+                PHYSICAL = True
+        
+        if PHYSICAL == True:
+            max_wavelength = 0
+            for iwfs in range(self.sim.nGS):
+                new_contestant = self.wfss[iwfs].wavelength
+                max_wavelength = numpy.max([new_contestant,max_wavelength])
+            for isci in range(self.sim.nSci):
+                new_contestant = self.scis[isci].wavelength
+                max_wavelength = numpy.max([new_contestant,max_wavelength])
+            max_subapFOV = 0
+            for iwfs in range(self.sim.nGS):
+                new_contestant = self.wfss[iwfs].subapFOV
+                max_subapFOV = numpy.max([new_contestant,max_subapFOV])
+            max_sci_fov = 0
+            for isci in range(self.sim.nSci):
+                new_contestant = self.scis[isci].FOV
+                max_sci_fov = numpy.max([new_contestant,max_sci_fov])
+            max_height = 0
+            for idm in range(self.sim.nDM):
+                new = numpy.abs(self.dms[idm].altitude)
+                max_height = numpy.max([new,max_height])
+            new = numpy.max(numpy.abs(self.atmos.scrnHeights))
+            max_height = numpy.max([new,max_height])
+            maxSciPOS = 0
+            for isci in range(self.sim.nSci):
+                new = (numpy.abs(self.scis[isci].position)).max()
+                maxSciPOS = numpy.max([new,maxSciPOS])
+            
+            # oversize = int(numpy.ceil((  ( (2.*max_wavelength/self.scrnStrengths).sum()
+            #                               + max_sci_fov*(2.*numpy.pi/360./3600.))
+            #                            * max_height/self.pixel_scale
+            #                         + self.wholeScrnSize)/self.wholeScrnSize))
+            # self.wholeScrnSize *= oversize
+            self.sim.max_diffraction_angle = (2.*max_wavelength/self.atmos.r0)
+            # self.sim.max_diffraction_angle = max_wavelength/2.*self.sim.pxlScale
+            self.sim.scrnSize = numpy.ceil(2*
+                    self.sim.pxlScale * max_height
+                    * (numpy.max([abs(maxGSPos) + max_subapFOV/2.,
+                                  abs(maxSciPOS) + max_sci_fov/2.])*ASEC2RAD
+                       + self.sim.max_diffraction_angle) )+self.sim.simSize
+            
+            self.sim.max_height = max_height
+            self.sim.max_sim_fov = 2*numpy.max([abs(maxGSPos) + max_subapFOV/2.,
+                          abs(maxSciPOS) + max_sci_fov/2.]) * ASEC2RAD
+            # self.sim.max_sim_fov = 0.
+        else:
+            self.sim.scrnSize = numpy.ceil(2*
                 self.sim.pxlScale * self.atmos.scrnHeights.max()
                 * abs(maxGSPos) * ASEC2RAD)+self.sim.simSize
 
@@ -206,11 +258,12 @@ class PY_Configurator(object):
         # If so, make oversized phase scrns
         wfsPhys = False
         for wfs in range(self.sim.nGS):
-            if self.wfss[wfs].propagationMode=="Physical":
+            if self.wfss[wfs].propagationMode == "Physical":
                 wfsPhys = True
                 break
         if wfsPhys:
             self.sim.scrnSize *= 2
+            # self.sim.scrnSize *= 1
 
         # If any wfs exposure times set to None, set to the sim loopTime
         for wfs in self.wfss:
@@ -237,6 +290,12 @@ class PY_Configurator(object):
         for dm in self.dms:
             if dm.diameter is None:
                 dm.diameter = self.tel.telDiam
+                if PHYSICAL == True:
+                    dm.diameter += ((2*self.sim.max_diffraction_angle
+                                       + self.sim.max_sim_fov) * dm.altitude)
+        if dm.nxActuators is not None:
+            dm.nxActuators = int(numpy.ceil(
+                dm.diameter/self.tel.telDiam*(dm.nxActuators - 1)) + 1)
 
 
     def __iter__(self):
@@ -562,6 +621,9 @@ class SimConfig(ConfigObj):
                             'totalWfsData',
                             'totalActs',
                             'saveHeader',
+                            'max_diffraction_angle',
+                            'max_height',
+                            'max_sim_fov',
                     ]
 
 

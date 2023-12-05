@@ -102,7 +102,7 @@ class DM(object):
                     )
 
         # the number of phase elements at the DM altitude
-        self.nx_dm_elements = int(round(self.pupil_size * self.diameter / self.telescope_diameter))
+        self.nx_dm_elements = int(numpy.ceil(self.pupil_size * self.diameter / self.telescope_diameter /2)*2)
         self.dm_frame = numpy.zeros((self.nx_dm_elements, self.nx_dm_elements))
 
         # An array of phase screen size to be observed by a line of sight

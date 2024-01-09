@@ -1,6 +1,5 @@
 import numpy
-from scipy.interpolate import interp2d,RectBivariateSpline, griddata
-from scipy.interpolate import interp2d,RectBivariateSpline, griddata, LinearNDInterpolator 
+from scipy.interpolate import interp2d,RectBivariateSpline, griddata 
 #a lookup dict for interp2d order (expressed as 'kind')
 INTERP_KIND = {1: 'linear', 3:'cubic', 5:'quintic'}
 

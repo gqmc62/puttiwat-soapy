@@ -20,6 +20,8 @@ import pyfftw
 import aotools
 from aotools.image_processing import centroiders
 
+from matplotlib import pyplot as plt
+
 from .. import LGS, logger, lineofsight, AOFFT, interp
 from . import wfs
 from .. import numbalib
@@ -106,7 +108,7 @@ class ShackHartmann(wfs.WFS):
         """
         self.los = lineofsight.LineOfSight(
                 self.config, self.soapy_config,
-                propagation_direction="down")
+                propagation_direction="down",mask=self.mask)
 
 
     def findActiveSubaps(self):
@@ -332,6 +334,14 @@ class ShackHartmann(wfs.WFS):
 
         else:
             self.interp_efield[:] = interp.zoom(los.EField, self.nx_interp_efield)
+            # plt.imshow(numpy.angle(self.interp_efield)*self.mask,vmin=-numpy.pi,vmax=numpy.pi)
+            # plt.colorbar()
+            # plt.title('wfs pupil plane phase')
+            # plt.show()
+            # plt.imshow(numpy.abs(self.interp_efield)**2*self.mask,vmin=0,vmax=2)
+            # plt.colorbar()
+            # plt.title('wfs pupil plane intensity')
+            # plt.show()
 
         # Create an array of individual subap EFields
         self.fft_input_data[:] = 0
@@ -394,6 +404,11 @@ class ShackHartmann(wfs.WFS):
 
         if self.config.eReadNoise!=0:
             self.addReadNoise()
+            
+        # plt.imshow(self.detector/self.detector.max(),vmin=0,vmax=1)
+        # plt.colorbar()
+        # plt.title('wfs detector plane')
+        # plt.show()
 
 
     def applyLgsUplink(self):

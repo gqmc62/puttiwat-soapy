@@ -29,6 +29,8 @@ import pyfftw
 
 import aotools
 
+from matplotlib import pyplot as plt
+
 from . import logger, lineofsight, numbalib, interp
 DTYPE = numpy.float32
 CDTYPE = numpy.complex64
@@ -77,6 +79,7 @@ class PSFCamera(object):
         self.crop_fov_factor = 1 + self.pupil_size // self.FOVPxlNo
         self.fov_crop_elements = (self.FOVPxlNo * self.crop_fov_factor - self.FOVPxlNo) // 2
         self.FOVPxlNo *= self.crop_fov_factor
+        self.FOVPxlNo = int(numpy.round(self.FOVPxlNo/2)*2)
 
         # And then pad it by the required telescope padding.
         # Will later cut out the FOVPxlNo of pixels for focussing
@@ -95,7 +98,8 @@ class PSFCamera(object):
         if self.config.propagationDir == "up":
             los_mask = self.mask
         else:
-            los_mask = None
+            # los_mask = None
+            los_mask = self.mask
 
         self.los = lineofsight.LineOfSight(
                 self.config, self.soapy_config,
@@ -165,6 +169,7 @@ class PSFCamera(object):
         # Calculate ideal PSF for purposes of strehl calculation
         self.los.frame()
         self.calcFocalPlane()
+        self.bestEField = numpy.copy(self.EField_fov)
         self.bestPSF = self.detector.copy()
         self.psfMax = self.bestPSF.max()
         self.longExpStrehl = 0
@@ -272,6 +277,11 @@ class PSFCamera(object):
         # Normalise the psf
         self.detector /= self.detector.sum()
         self.long_exp_image = self._long_exp_image / self._long_exp_image.sum()
+        
+        # plt.imshow(numpy.log10(self.detector/self.detector.max()),vmin=-3,vmax=0)
+        # plt.colorbar()
+        # plt.title('science detector')
+        # plt.show()
 
 
     def calcInstStrehl(self):
@@ -281,9 +291,18 @@ class PSFCamera(object):
         if self.sciConfig.instStrehlWithTT:
             self.instStrehl = self.detector[self.sciConfig.pxls // 2, self.sciConfig.pxls // 2] / self.psfMax
             self.longExpStrehl = self.long_exp_image[self.sciConfig.pxls //2, self.sciConfig.pxls //2] / self.psfMax
-        else: 
-            self.instStrehl = self.detector.max() / self.psfMax
-            self.longExpStrehl = self.long_exp_image.max() / self.psfMax
+        else:
+            if self.config.propagationMode == "Physical":
+                A = self.EField_fov
+                B = self.bestEField
+                self.instStrehl = (numpy.abs(numpy.sum(A*numpy.conjugate(B)))**2
+                                   / numpy.abs(numpy.sum(A*numpy.conjugate(A)))
+                                   / numpy.abs(numpy.sum(B*numpy.conjugate(B))))
+                self.longExpStrehl = self.long_exp_image.max() / self.psfMax
+                # print(self.instStrehl,'not support long strehl for physical yet',self.longExpStrehl)
+            else:
+                self.instStrehl = self.detector.max() / self.psfMax
+                self.longExpStrehl = self.long_exp_image.max() / self.psfMax
 
 
     def calc_wavefronterror(self):
@@ -294,19 +313,46 @@ class PSFCamera(object):
              float: RMS WFE across pupil in nm
         """
         if self.config.propagationMode == "Physical":
-            return 0
-        res = (self.los.phase.copy() * self.mask) / self.los.phs2Rad
-
-        # Piston is mean across aperture
-        piston = res.sum() / self.mask.sum()
-
-        # remove from WFE measurements as its not a problem
-        res -= (piston*self.mask)
-
-        ms_wfe = numpy.square(res).sum() / self.mask.sum()
-        rms_wfe = numpy.sqrt(ms_wfe)
-
-        return rms_wfe
+            pad = (self.los.nx_out_pixels - self.sim_size)//2
+            
+            residual_field = numpy.copy(self.los.EField[pad:-pad,pad:-pad])*self.mask
+            
+            # piston = residual_field.sum()/self.mask.sum()
+            # piston /= numpy.abs(piston)
+            
+            # residual_field /= piston
+            # residual_field *= self.mask
+            
+            # plt.imshow(numpy.angle(residual_field)*self.mask,vmin=-numpy.pi,vmax=numpy.pi)
+            # plt.title('science residual rad phys')
+            # plt.colorbar()
+            # plt.show()
+            
+            ms_wfe = numpy.square(numpy.angle(residual_field)/self.los.phs2Rad*self.mask).sum() / self.mask.sum()
+            rms_wfe = numpy.sqrt(ms_wfe)
+            
+            return rms_wfe
+        
+        else:
+            res = (self.los.phase.copy() * self.mask)
+    
+            # Piston is mean across aperture
+            piston = res.sum() / self.mask.sum()
+    
+            # remove from WFE measurements as its not a problem
+            res -= (piston*self.mask)
+            
+            res = self.mask / self.los.phs2Rad * numpy.angle(numpy.exp(1j*res))
+            
+            plt.imshow(res)
+            plt.title('science residual nm geom')
+            plt.colorbar()
+            plt.show()
+    
+            ms_wfe = numpy.square(res).sum() / self.mask.sum()
+            rms_wfe = numpy.sqrt(ms_wfe)
+    
+            return rms_wfe
 
 
     def frame(self, scrns, correction=None):

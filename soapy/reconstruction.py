@@ -302,9 +302,15 @@ class Reconstructor(object):
                     wfs.config.photonNoise = False
                     wfs_rnoise = wfs.config.eReadNoise
                     wfs.config.eReadNoise = 0
-
+                
                 iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = (
                         -1 * wfs.frame(None, phase_correction=phase, iMatFrame=True))# / dm.dmConfig.iMatValue
+                
+                # plt.imshow(wfs.wfsDetectorPlane)
+                # plt.title('wfs')
+                # plt.colorbar()
+                # plt.show()
+                
                 n_wfs_measurments += wfs.n_measurements
 
                 # Turn noise back on again if it was turned off
@@ -317,7 +323,7 @@ class Reconstructor(object):
 
             logger.statusMessage(i, dm.n_acts,
                                  "Generating {} Actuator DM iMat".format(dm.n_acts))
-
+        
         logger.info("Checking for redundant actuators...")
         # Now check tath each actuator actually does something on a WFS.
         # If an act has a <0.1% effect then it will be removed
@@ -325,10 +331,13 @@ class Reconstructor(object):
         valid_actuators = numpy.zeros((dm.n_acts), dtype="int")
         act_threshold = abs(iMat).max() * 0.001
         for i in range(dm.n_acts):
+            # plt.plot(i,abs(iMat[i]).max(),marker='o',ls='')
             if abs(iMat[i]).max() > act_threshold:
                 valid_actuators[i] = 1
             else:
                 valid_actuators[i] = 0
+        # plt.hlines(act_threshold,0,dm.n_acts)
+        # plt.show()
 
         dm.valid_actuators = valid_actuators
         n_valid_acts = valid_actuators.sum()
@@ -459,22 +468,29 @@ class MVM(Reconstructor):
         control matrix
         '''
         
-        _,svd,_ = numpy.linalg.svd(self.interaction_matrix)
-        svd /= svd.max()
-        plt.plot(svd,label='old svd')
-        plt.hlines(self.config.svdConditioning,0,len(svd),label='old svd')
-        plt.legend()
-        plt.show()
+        # _,svd,_ = numpy.linalg.svd(self.interaction_matrix)
+        # svd /= svd.max()
+        # # plt.plot(svd,label='old svd')
+        # # plt.hlines(self.config.svdConditioning,0,len(svd),label='old svd')
+        # # plt.legend()
+        # # plt.show()
         
-        cumulative_actuators = 0
-        old_cumulative_actuators = 0
-        for i in self.dms:
-            cumulative_actuators += self.dms[i].n_acts
-            old_iMat = self.dms[i].config.iMatValue
-            new_iMat = old_iMat/numpy.max(svd[old_cumulative_actuators:cumulative_actuators])
-            new_iMat *= (1 - 0.2*(len(self.dms) - i)/len(self.dms))
-            old_cumulative_actuators = cumulative_actuators
-            print(self.dms[i],new_iMat)
+        # cumulative_actuators = 0
+        # old_cumulative_actuators = 0
+        # for i in self.dms:
+        #     if self.dms[i].dmConfig.type == 'TT':
+        #         cumulative_actuators += self.dms[i].n_acts
+        #         old_iMat = self.dms[i].config.iMatValue
+        #         new_iMat = old_iMat*self.interaction_matrix.max()/self.interaction_matrix[old_cumulative_actuators:cumulative_actuators].max()
+        #         old_cumulative_actuators = cumulative_actuators
+        #         print(self.dms[i],new_iMat)
+        #     # if self.dms[i].dmConfig.type =='FastPiezo':
+        #     #     cumulative_actuators += self.dms[i].n_acts
+        #     #     old_iMat = self.dms[i].config.iMatValue
+        #     #     new_iMat = old_iMat/numpy.max(svd[old_cumulative_actuators:cumulative_actuators])
+        #     #     new_iMat *= (1 - 0.2*(len(self.dms) - i)/len(self.dms))
+        #     #     old_cumulative_actuators = cumulative_actuators
+        #     #     print(self.dms[i],new_iMat)
         
         logger.info("Invert iMat with conditioning: {:.4f}".format(
                 self.config.svdConditioning))

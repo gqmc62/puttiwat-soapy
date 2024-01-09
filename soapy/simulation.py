@@ -565,7 +565,7 @@ class Sim(object):
         # Get dmShape from closed loop DMs
         self.closed_correction = self.runDM(
                 self.dmCommands, closed=True)
-
+        
         # Run WFS, with closed loop DM shape applied
         self.slopes = self.runWfs(dmShape=self.closed_correction,
                                   loopIter=self.iters)
@@ -578,10 +578,6 @@ class Sim(object):
         self.combinedCorrection = self.open_correction + self.closed_correction
 
         self.runSciCams(self.combinedCorrection)
-        
-        plt.imshow(self.combinedCorrection.sum(0))
-        plt.title('dm shape at altitude')
-        plt.show()
 
         # Save Data
         i = self.iters % self.config.sim.nIters # If sim is run continuously in loop, overwrite oldest data in buffer
@@ -855,7 +851,7 @@ class Sim(object):
             if self.config.sim.saveSciRes:
                 for sci in xrange(self.config.sim.nSci):
                     cut = (self.sciCams[sci].residual.shape[0] - self.sciPhase[sci][i].shape[0])//2
-                    self.sciPhase[sci][i] = self.sciCams[sci].residual[cut:-cut-1,cut:-cut-1]
+                    self.sciPhase[sci][i] = self.sciCams[sci].residual[cut:-cut,cut:-cut]
 
         if self.config.sim.simName!=None:
             if self.config.sim.saveWfsFrames:

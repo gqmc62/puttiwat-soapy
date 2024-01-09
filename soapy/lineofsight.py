@@ -25,6 +25,7 @@ Examples::
 
 import numpy
 
+import aotools
 from aotools import opticalpropagation
 import copy 
 
@@ -159,75 +160,130 @@ class LineOfSight(object):
         else:
             self.out_pixel_scale = out_pixel_scale
             
-        try:
-            self.fov = self.config.subapFOV * 2*np.pi/360./3600.
-        except:
-            self.fov = self.config.FOV * 2*np.pi/360./3600.
+        # try:
+        #     self.fov = self.config.subapFOV * 2*np.pi/360./3600.
+        # except:
+        #     self.fov = self.config.FOV * 2*np.pi/360./3600.
+        self.fov = 0
         
-        self.max_diffraction_angle = self.soapy_config.sim.max_diffraction_angle + self.fov/2.
+        
+            
         if nx_out_pixels is None:
             self.nx_out_pixels = self.simConfig.simSize
         else:
             self.nx_out_pixels = nx_out_pixels
+            self.max_input_pixel = nx_out_pixels
+            
         if self.config.propagationMode == 'Physical':
-            # self.nx_in_pixels = self.nx_out_pixels
-            self.nx_in_pixels = int(round(
-                numpy.max([self.nx_out_pixels + (2*self.max_diffraction_angle
-                   *self.soapy_config.sim.max_height/self.out_pixel_scale),
-                self.wavelength*numpy.max(numpy.concatenate([
-                    self.layer_altitudes,self.dm_altitudes,[0]]))/self.out_pixel_scale**2])
+            
+            self.max_grid_diffraction_angle = self.wavelength/2./self.out_pixel_scale
+            # self.max_diffraction_angle = self.soapy_config.sim.max_diffraction_angle + self.fov/2.
+            # self.max_simulation_angle = None
+            self.max_simulation_angle = self.max_grid_diffraction_angle
+            
+
+            
+            # ***** !!!!!
+            # assume same pixel_scale throughout everything!!!!
+            # this is a big threat to soapy as soapy is so flexible
+            # things don't always share the same pixel scale
+            
+            self.max_input_pixel = int(numpy.ceil(
+                (self.nx_out_pixels
+                 + numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
+                 * (2*self.max_grid_diffraction_angle)/self.out_pixel_scale)
                 /2)*2)
+            
+            
+            
+            self.nx_prop_pixels = int(round(
+                numpy.max([
+                    
+                    2*self.max_input_pixel,
+                    
+                    self.wavelength*numpy.max(numpy.concatenate([
+                        self.layer_altitudes,self.dm_altitudes,[0]]))/self.out_pixel_scale**2
+                    
+                    ])
+                /2)*2)
+            
+            # the next even number of pixels that contains
+            # pupil, ( fov + 2*diffraction_per_side )scaled to max height
+            # and the largest angular-spectrum in OTF = wvl*z/delta**2
+            
+            
+            
+            self.low_buf = (self.nx_prop_pixels - self.nx_out_pixels)//2
+            self.high_buf = (self.nx_prop_pixels + self.nx_out_pixels)//2
+            
+            self.pad = (self.nx_prop_pixels - self.max_input_pixel)//2
+            
+            test_result = test_propagation_parameters(self.wavelength,self.layer_altitudes,self.dm_altitudes,
+                                        self.nx_prop_pixels,
+                                        self.max_input_pixel,
+                                        self.nx_out_pixels*self.pupil_size/self.sim_size,
+                                        self.out_pixel_scale,
+                                        self.max_simulation_angle)
+            
+            if (test_result == False):
+                print('Propagation Parameter need adjustment')
+            # else:
+            #     print('Pass propagation criteria list')
+            
+            
         else:
-            self.nx_in_pixels = self.nx_out_pixels                
-        if self.mask is not None:
-            self.outMask = interp.zoom(
-                    self.mask, self.nx_out_pixels)#.round()
+            # if not physical, all the new parameters should equal to the only old parameters   
+            self.nx_prop_pixels = self.nx_out_pixels
+            
+        temp2 = int(numpy.floor(self.nx_out_pixels*self.pupil_size/self.sim_size))
+        temp1 = temp2//2
+            
+        self.plot_mask = aotools.circle(temp1,temp2)
+            
+        if False:#self.mask is not None:
+            self.outMask = interp.zoom_rbs (
+                    self.mask, self.nx_out_pixels, order=1)#.round()
         else:
             self.outMask = None
+            # self.outMask = interp.zoom(
+            #         self.mask, self.nx_out_pixels)#.round()
 
         self.output_phase_diameter = self.nx_out_pixels * self.out_pixel_scale
         
-        test_result = test_propagation_parameters(self.wavelength,self.layer_altitudes,self.dm_altitudes,
-                                    self.nx_in_pixels,self.nx_out_pixels,self.out_pixel_scale,
-                                    self.max_diffraction_angle)
-        if (test_result == False):
-            print('Propagation Parameter need adjustment')
-        
-        self.low_buf = (self.nx_in_pixels - self.nx_out_pixels)//2
-        self.high_buf = (self.nx_in_pixels + self.nx_out_pixels)//2
 
         # Calculate coords of phase at each altitude
-        self.layer_metapupil_coords = numpy.zeros((self.n_layers, 2, self.nx_in_pixels))
+        self.layer_metapupil_coords = numpy.zeros((self.n_layers, 2, self.max_input_pixel))
         for i in range(self.n_layers):
             x1, x2, y1, y2 = self.calculate_altitude_coords(self.layer_altitudes[i])
-            self.layer_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
-            self.layer_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
+            self.layer_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.max_input_pixel)
+            self.layer_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.max_input_pixel)
 
         # ensure coordinates aren't out of bounds for interpolation
         self.layer_metapupil_coords = self.layer_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
 
         # Calculate coords of phase at each DM altitude
-        self.dm_metapupil_coords = numpy.zeros((self.n_dm, 2, self.nx_in_pixels))
+        self.dm_metapupil_coords = numpy.zeros((self.n_dm, 2, self.max_input_pixel))
         for i in range(self.n_dm):
             x1, x2, y1, y2 = self.calculate_altitude_coords(self.dm_altitudes[i])
-            self.dm_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
-            self.dm_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
+            self.dm_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.max_input_pixel)
+            self.dm_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.max_input_pixel)
         self.dm_metapupil_coords = self.dm_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
 
         self.radii = None
         
         # Relavent phase  centred on the line of sight direction
-        self.phase_screens = numpy.zeros((self.n_layers, self.nx_out_pixels, self.nx_out_pixels))
-        self.phase_screens_buf = numpy.zeros((self.n_layers, self.nx_in_pixels, self.nx_in_pixels))
+        self.phase_screens = numpy.zeros((self.n_layers, self.max_input_pixel, self.max_input_pixel))
         # Buffer for corection across fulll FOV
-        self.correction_screens = numpy.zeros((self.n_dm, self.nx_out_pixels, self.nx_out_pixels))
-        self.correction_screens_buf = numpy.zeros((self.n_dm, self.nx_in_pixels, self.nx_in_pixels))
+        self.correction_screens = numpy.zeros((self.n_dm, self.max_input_pixel, self.max_input_pixel))
         # Relavent correction centred on the line of sight direction
-        self.phase_correction = numpy.zeros((self.nx_out_pixels, self.nx_out_pixels))
-        self.phase_correction_buf = numpy.zeros((self.nx_in_pixels, self.nx_in_pixels))
+        self.phase_correction = numpy.zeros((self.max_input_pixel, self.max_input_pixel))
+        if self.config.propagationMode == 'Physical':
+            self.phase_screens_buf = numpy.zeros((self.n_layers, self.nx_prop_pixels, self.nx_prop_pixels))
+            self.correction_screens_buf = numpy.zeros((self.n_dm, self.nx_prop_pixels, self.nx_prop_pixels))
+            self.phase_correction_buf = numpy.zeros((self.nx_prop_pixels, self.nx_prop_pixels))
 
         self.allocDataArrays()
-        
+
     def calculate_altitude_coords(self, layer_altitude):
         """
         Calculate the co-ordinates of vertices of fo the meta-pupil at altitude given a guide star
@@ -246,11 +302,18 @@ class LineOfSight(object):
                 centre += self.launch_position
             else:
                 centre += self.launch_position * (1 - layer_altitude/self.source_altitude)
-
-        if self.source_altitude != 0:
-            meta_pupil_size = self.output_phase_diameter * (1 - layer_altitude / self.source_altitude)
+                
+        if self.config.propagationMode == 'Physical':
+            if self.source_altitude != 0:
+                meta_pupil_size = (self.max_input_pixel*self.out_pixel_scale * (1 - layer_altitude / self.source_altitude))
+                # print('currently not supporting this')
+            else:
+                meta_pupil_size = self.max_input_pixel*self.out_pixel_scale
         else:
-            meta_pupil_size = self.output_phase_diameter
+            if self.source_altitude != 0:
+                meta_pupil_size = self.output_phase_diameter * (1 - layer_altitude / self.source_altitude)
+            else:
+                meta_pupil_size = self.output_phase_diameter
 
         x1 = ((centre[0] - meta_pupil_size / 2.) / self.in_pixel_scale) + self.nx_scrn_size / 2.
         x2 = ((centre[0] + meta_pupil_size / 2.) / self.in_pixel_scale) + self.nx_scrn_size / 2.
@@ -261,7 +324,6 @@ class LineOfSight(object):
         logger.debug("Coords: x1: {}, x2: {}, y1: {},  y2: {}".format(x1, x2, y1, y2))
 
         return x1, x2, y1, y2
-
 
     def allocDataArrays(self):
         """
@@ -278,7 +340,8 @@ class LineOfSight(object):
         self.correction_EField = numpy.copy(self.EField)
         self.residual_EField = numpy.copy(self.EField)
         
-        self.EField_buf = numpy.ones([self.nx_in_pixels] * 2, dtype=CDTYPE)
+        if self.config.propagationMode == 'Physical':
+            self.EField_buf = numpy.ones([self.nx_prop_pixels] * 2, dtype=CDTYPE)
 
 ######################################################
 
@@ -292,9 +355,10 @@ class LineOfSight(object):
         self.correction_screens[:] = 0
         self.correction_EField[:] = 1
         
-        self.EField_buf[:] = 1
-        self.phase_screens_buf[:] = 0
-        self.correction_screens_buf[:] = 0
+        if self.config.propagationMode == 'Physical':
+            self.EField_buf[:] = 1
+            self.phase_screens_buf[:] = 0
+            self.correction_screens_buf[:] = 0
         
     def makePhase(self, radii=None, apos=None):
         """
@@ -305,13 +369,7 @@ class LineOfSight(object):
             radii (dict, optional): Radii of each meta pupil of each screen height in pixels. If not given uses pupil radius.
             apos (ndarray, optional):  The angular position of the GS in radians. If not set, will use the config position
         """
-        for i in range(self.scrns.shape[0]):
-            numbalib.bilinear_interp(
-                self.scrns[i], self.layer_metapupil_coords[i, 0], self.layer_metapupil_coords[i, 1],
-                self.phase_screens_buf[i], bounds_check=False)
-            self.phase_screens[i] = self.phase_screens_buf[i][self.low_buf:self.high_buf,
-                                                              self.low_buf:self.high_buf]
-
+        
         # Check if geometric or physical
         if self.config.propagationMode == "Physical":
             return self.makePhasePhys(radii)
@@ -328,7 +386,11 @@ class LineOfSight(object):
             apos (ndarray, optional):  The angular position of the GS in radians. If not set, will use the config position
         '''
 
-
+        for i in range(self.scrns.shape[0]):
+            numbalib.bilinear_interp(
+                self.scrns[i], self.layer_metapupil_coords[i, 0], self.layer_metapupil_coords[i, 1],
+                self.phase_screens[i], bounds_check=False)
+            
         self.atmos_phase = self.phase_screens.sum(0)
 
         # Convert phase to radians
@@ -340,6 +402,9 @@ class LineOfSight(object):
 
         self.phase[:] += self.atmos_phase
         self.EField[:] *= numpy.exp(1j*self.atmos_phase)
+        
+        if self.outMask is not None:
+            self.EField[:] = np.copy(self.EField[:] * self.outMask)
 
         return self.EField
 
@@ -352,20 +417,50 @@ class LineOfSight(object):
             radii (dict, optional): Radii of each meta pupil of each screen height in pixels. If not given uses pupil radius.
             apos (ndarray, optional):  The angular position of the GS in radians. If not set, will use the config position
         '''
-
+        
+        for i in range(self.scrns.shape[0]):
+            numbalib.bilinear_interp(
+                self.scrns[i], self.layer_metapupil_coords[i, 0], self.layer_metapupil_coords[i, 1],
+                self.phase_screens[i], bounds_check=False)
+            self.phase_screens_buf[i] = numpy.pad(self.phase_screens[i],
+                                                  (self.pad,self.pad),
+                                                  mode='constant',
+                                                  constant_values=(0,0))
+            
+            # if (self.scrns.sum() != 0):
+            #     if (self.scrns[i].sum() != 0):
+            #         plt.imshow(self.scrns[i])
+            #         plt.colorbar()
+            #         plt.title('original full screen {:}'.format(i)
+            #                   + ' : {}'.format(self.config.type))
+            #         plt.show()
+            #         plt.imshow(self.phase_screens[i])
+            #         plt.colorbar()
+            #         plt.title('original los phase screen {:}'.format(i)
+            #                   + ' : {}'.format(self.config.type))
+            #         plt.show()
+            #         plt.imshow(self.phase_screens_buf[i])
+            #         plt.colorbar()
+            #         plt.title('original buffered los phase screen {:}'.format(i)
+            #                   + ' : {}'.format(self.config.type))
+            #         plt.show()
+            
         self.EField_buf[:] = physical_atmosphere_propagation(
             self.phase_screens_buf, self.outMask, self.layer_altitudes, self.source_altitude,
-            self.wavelength, self.out_pixel_scale, self.max_diffraction_angle,
+            self.wavelength, self.out_pixel_scale,
             propagation_direction=self.propagation_direction,
-            input_efield=self.EField_buf)
+            input_efield=self.EField_buf, max_angle=None)
         
         # self.phase[:] = numpy.angle(self.EField[:])
         
         
         self.EField = self.EField_buf[self.low_buf:self.high_buf,
                                       self.low_buf:self.high_buf]
+        
+        if self.outMask is not None:
+            self.EField[:] = np.copy(self.EField[:] * self.outMask)
 
-        return self.EField_buf, self.EField
+        return self.EField#,self.EField_buf 
 
 
     def performCorrection(self, correction):
@@ -375,106 +470,256 @@ class LineOfSight(object):
         Parameters:
             correction (list or ndarray): either 2-d array describing correction, or list of correction arrays
         """
+        
+        if self.config.propagationMode == 'Physical':
+            self.performCorrectionPhysical(correction)
+        else:
+            self.performCorrectionGeometric(correction)
+        
+    def performCorrectionGeometric(self, correction):
+        
         for i in range(correction.shape[0]):
             numbalib.bilinear_interp(
                 correction[i], self.dm_metapupil_coords[i, 0], self.dm_metapupil_coords[i, 1],
                 self.correction_screens[i], bounds_check=False)
-
+            
+        # original_state = numpy.copy(self.EField)
+        
         self.correction_screens.sum(0, out=self.phase_correction)
 
         self.phase_correction *= self.phs2Rad
         # Correct EField
         self.EField *= numpy.exp(-1j * self.phase_correction)
 
+        if self.outMask is not None:
+            mean_phase = np.sum(self.EField*self.outMask)/np.sum(self.outMask)
+        else:
+            mean_phase = np.mean(self.EField)
+        mean_phase /= np.abs(mean_phase)
+        # mean_phase = 1
+        
+        self.EField /= mean_phase
+
         # Also correct phase in case its required
         
-        self.residual = (self.phase - self.phase_correction) / self.phs2Rad
+        self.residual = (self.phase - self.phase_correction - np.angle(mean_phase)) / self.phs2Rad
 
         self.phase = self.residual * self.phs2Rad
+        
+        # plot = False
+        # if ((correction is not None)
+        #     and (self.scrns.sum() != 0)
+        #     and (self.config.type == 'ShackHartmann')
+        #     and plot):
+            
+        #     A = original_state.shape[-1]
+        #     B = self.nx_out_pixels
+            
+        #     prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2]/mean_phase)
+        #     plt.imshow(prop_atm_phase, vmin=-numpy.pi,vmax=numpy.pi)
+        #     plt.title('atm phase geometric')
+        #     plt.colorbar()
+        #     plt.show()
+        #     prop_atm_intensity = self.plot_mask * np.abs(original_state[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2]/mean_phase)**2
+        #     plt.imshow(prop_atm_intensity,
+        #                 vmin=0,vmax=3)
+        #     plt.title('atm intensity geometric')
+        #     plt.colorbar()
+        #     plt.show()
+            
+        #     prop_dm_phase = self.plot_mask*np.angle(numpy.exp(1j*self.phase_correction[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2])
+        #                         /mean_phase)
+        #     plt.imshow(prop_dm_phase,vmin=-numpy.pi,vmax=numpy.pi)
+        #     plt.title('dm phase geometric')
+        #     plt.colorbar()
+        #     plt.show()
+            
+        #     prop_dm_intensity = self.plot_mask * np.abs(numpy.exp(1j*self.phase_correction[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2])
+        #                       /mean_phase)**2
+        #     plt.imshow(prop_dm_intensity,vmin=0,vmax=3)
+        #     plt.title('dm intensity geometric')
+        #     plt.colorbar()
+        #     plt.show()
+            
+        #     # not true as this still runs with recon from wfs/dm with propagation
+        #     # regular_res_phase = self.plot_mask*(np.angle(np.exp(1j*(
+        #     #     regular_atm - regular_dm))/mean_phase))
+        #     # plt.imshow(regular_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
+        #     # plt.title('residal phase no prop')
+        #     # plt.colorbar()
+        #     # plt.show()
+            
+        #     prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2])
+        #     plt.imshow(prop_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
+        #     plt.title('res phase geometric')
+        #     plt.colorbar()
+        #     plt.show()
+            
+        #     prop_res_phase = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2])**2
+        #     plt.imshow(prop_res_phase,vmin=0,vmax=3)
+        #     plt.title('res intensity geometric')
+        #     plt.colorbar()
+        #     plt.show()
+            
     
     def performCorrectionPhysical(self, correction):
         # either up or down, still need to start from pupil, ... right?
         # anyway for 'down' definitely need to pick up from the pupil
-        
         for i in range(correction.shape[0]):
             numbalib.bilinear_interp(
                 correction[i], self.dm_metapupil_coords[i, 0], self.dm_metapupil_coords[i, 1],
-                self.correction_screens_buf[i], bounds_check=False)
+                self.correction_screens[i], bounds_check=False)
+            self.correction_screens_buf[i] = numpy.pad(self.correction_screens[i],
+                                                       (self.pad,self.pad),
+                                                       mode='constant',
+                                                       constant_values=(0,0))
+            # if (correction[i].sum() != 0):
+            #     plt.imshow(correction[i])
+            #     plt.colorbar()
+            #     plt.title('original full dm {:}'.format(i)
+            #               + ' : {}'.format(self.config.type))
+            #     plt.show()
+            #     plt.imshow(self.correction_screens[i])
+            #     plt.colorbar()
+            #     plt.title('original los dm {:}'.format(i)
+            #               + ' : {}'.format(self.config.type))
+            #     plt.show()
+            #     plt.imshow(self.correction_screens_buf[i])
+            #     plt.colorbar()
+            #     plt.title('original buffered dm {:}'.format(i)
+            #               + ' : {}'.format(self.config.type))
+            #     plt.show()
         
         original_state = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
                                             self.low_buf:self.high_buf])
         
         physical_correction_propagation(
-            self.correction_screens_buf, self.outMask, self.dm_altitudes,
-            self.wavelength, self.out_pixel_scale, self.max_diffraction_angle,
-            input_efield=self.EField_buf)
+            self.correction_screens_buf, None, self.dm_altitudes,
+            self.wavelength, self.out_pixel_scale,
+            input_efield=self.EField_buf, max_angle=None)
         self.EField = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
                                       self.low_buf:self.high_buf])
         
         self.residual_EField = numpy.copy(self.EField)
         self.correction_EField = numpy.copy(original_state/self.EField)
         
-        mean_phase = np.mean(self.EField)
+        if self.outMask is not None:
+            mean_phase = np.sum(self.EField*self.outMask)/np.sum(self.outMask)
+        else:
+            mean_phase = np.mean(self.EField)
         mean_phase /= np.abs(mean_phase)
+        # mean_phase = 1
         
-        self.residual = np.angle(self.EField/mean_phase) / self.phs2Rad
+        self.EField /= mean_phase
+        
+        self.residual = np.angle(self.EField) / self.phs2Rad
         self.phase = self.residual * self.phs2Rad
         
-        
-        
-        
-        A = original_state.shape[-1]
-        B = self.pupil_size
-        plt.imshow(np.angle(original_state[(A-B)//2:(A+B)//2,
-                                            (A-B)//2:(A+B)//2]/mean_phase)
-                    , vmin=-numpy.pi,vmax=numpy.pi)
-        # plt.imshow(np.angle(original_state)
-        #            , vmin=-numpy.pi,vmax=numpy.pi)
-        plt.title('atm phase')
-        plt.colorbar()
-        plt.show()
-        plt.imshow(np.abs(original_state[(A-B)//2:(A+B)//2,
-                                            (A-B)//2:(A+B)//2])**2,
-                    vmin=0,vmax=3)
-        # plt.imshow(np.abs(original_state)**2,
-        #            vmin=0,vmax=3)
-        plt.title('atm intensity')
-        plt.colorbar()
-        plt.show()
-        
-        plt.imshow(np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
-                                            (A-B)//2:(A+B)//2]
-                            /mean_phase),vmin=-numpy.pi,vmax=numpy.pi)
-        # plt.imshow(np.angle(self.correction_EField
-        #                     /mean_phase),vmin=-numpy.pi,vmax=numpy.pi)
-        plt.title('dm phase')
-        plt.colorbar()
-        plt.show()
-        plt.imshow(np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
-                                            (A-B)//2:(A+B)//2]
-                          /mean_phase)**2,vmin=0,vmax=3)
-        # plt.imshow(np.abs(self.correction_EField
-        #                   /mean_phase)**2,vmin=0,vmax=3)
-        plt.title('dm intensity')
-        plt.colorbar()
-        plt.show()
-        
-        plt.imshow(np.angle(self.EField[(A-B)//2:(A+B)//2,
-                                            (A-B)//2:(A+B)//2]
-                            /mean_phase),vmin=-numpy.pi,vmax=numpy.pi)
-        # plt.imshow(np.angle(self.EField
-        #                     /mean_phase),vmin=-numpy.pi,vmax=numpy.pi)
-        plt.title('res phase')
-        plt.colorbar()
-        plt.show()
-        plt.imshow(np.abs(self.EField[(A-B)//2:(A+B)//2,
-                                            (A-B)//2:(A+B)//2]
-                          /mean_phase)**2,vmin=0,vmax=3)
-        # plt.imshow(np.abs(self.EField
-        #                   /mean_phase)**2,vmin=0,vmax=3)
-        plt.title('res intensity')
-        plt.colorbar()
-        plt.show()
+        plot = False#((self.scrns.sum() != 0) or (correction.sum() != 0))
+        if plot:
+            A = original_state.shape[-1]
+            B = self.plot_mask.shape[0]
+            
+            if (self.scrns.sum() != 0):
+                
+                regular_atm = self.plot_mask*(np.angle(np.exp(1j*(self.phase_screens_buf[:,
+                                                                  self.low_buf:self.high_buf,
+                                                                  self.low_buf:self.high_buf][
+                                                                      :,(A-B)//2:(A+B)//2,
+                                                                      (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
+                plt.imshow(regular_atm)#, vmin=-numpy.pi,vmax=numpy.pi)
+                plt.title('atm phase no prop : {}'.format(self.config.type))
+                plt.colorbar()
+                plt.show()
+                
+                
+                if (self.layer_altitudes != 0).any():
+                
+                    prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]/mean_phase)
+                    plt.imshow(prop_atm_phase, vmin=-numpy.pi,vmax=numpy.pi)
+                    plt.title('atm phase : {}'.format(self.config.type))
+                    plt.colorbar()
+                    plt.show()
+                    # prop_atm_intensity = self.plot_mask * np.abs(original_state[(A-B)//2:(A+B)//2,
+                    #                                     (A-B)//2:(A+B)//2]/mean_phase)**2
+                    # plt.imshow(prop_atm_intensity,
+                    #             vmin=0,vmax=3)
+                    # plt.title('atm intensity')
+                    # plt.colorbar()
+                    # plt.show()
+            
+                if (correction is not None):
+                    
+                    regular_dm = self.plot_mask*np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
+                                                  self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2].sum(0))/mean_phase)
+                    plt.imshow(regular_dm,vmin=-numpy.pi,vmax=numpy.pi)
+                    # plt.title('dm phase no prop')
+                    plt.title('dm phase at altitude : {}'.format(self.config.type))
+                    plt.colorbar()
+                    plt.show()
+                    
+                    # if True:#(self.dm_altitudes != 0).any():
+                    
+                    prop_dm_phase = self.plot_mask*np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]
+                                        /mean_phase)
+                    plt.imshow(prop_dm_phase,vmin=-numpy.pi,vmax=numpy.pi)
+                    plt.title('dm phase : {}'.format(self.config.type))
+                    plt.colorbar()
+                    plt.show()
+                    
+                    prop_dm_intensity = self.plot_mask * np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]
+                                      /mean_phase)**2
+                    plt.imshow(prop_dm_intensity,vmin=0,vmax=3)
+                    plt.title('dm intensity : {}'.format(self.config.type))
+                    plt.colorbar()
+                    plt.show()
+                    
+                # if ((correction is not None) or (self.scrns.sum() != 0)):
+                    
+                    # not true as this still runs with recon from wfs/dm with propagation
+                    # regular_res_phase = self.plot_mask*(np.angle(np.exp(1j*(
+                    #     regular_atm - regular_dm))/mean_phase))
+                    # plt.imshow(regular_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
+                    # plt.title('residal phase no prop')
+                    # plt.colorbar()
+                    # plt.show()
+                    
+                    P = self.plot_mask*self.EField[(A-B)//2:(A+B)//2,
+                                                   (A-B)//2:(A+B)//2]
+                    Q = self.plot_mask
+                    
+                    strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+                                       / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+                                       / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+                    
+                    prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2])
+                    plt.imshow(prop_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
+                    plt.title('res phase,\n'
+                              + '{}: strehl={}'.format(self.config.type, strehl))
+                    plt.colorbar()
+                    plt.show()
+                    
+                    if (self.layer_altitudes != 0).any() or (self.dm_altitudes != 0).any():
+                    
+                        prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
+                                                            (A-B)//2:(A+B)//2])**2
+                        plt.imshow(prop_res_intensity,vmin=0,vmax=3)
+                        plt.colorbar()
+                        plt.title('res intensity,\n'
+                                  + '{}: strehl={}'.format(self.config.type, strehl))
+                        plt.show()
+            
 
     def frame(self, scrns=None, correction=None):
         '''
@@ -498,10 +743,7 @@ class LineOfSight(object):
 
         # If we propagate up, must do correction first!
         if (self.propagation_direction == "up") and (correction is not None):
-            if self.config.propagationMode == "Physical":
-                self.performCorrectionPhysical(correction)
-            else:
-                self.performCorrection(correction)
+            self.performCorrection(correction)
 
         # Now do propagation through atmospheric turbulence
         if scrns is not None:
@@ -516,57 +758,77 @@ class LineOfSight(object):
         self.residual = self.phase
         # If propagating down, do correction last
         if (self.propagation_direction == "down") and (correction is not None):
-            if self.config.propagationMode == "Physical":
-                self.performCorrectionPhysical(correction)
-            else:
-                self.performCorrection(correction)
+            self.performCorrection(correction)
+        
+        # print(np.angle(self.EField.mean()))
         
         return self.residual
 
 
+# proper propagation without limiting angular-spectrum
 def test_propagation_parameters(wvl,turbHs,DMHs,
-                            n_in,n_out,scale,
+                            N,n_in,n_out,scale,
                             angle):
-    n_conditions = 4
+    n_conditions = 6
     heights = numpy.unique(numpy.abs(numpy.concatenate((turbHs,DMHs,[0]))))
     MAXZ = heights.max() - heights.min()
     conditions = numpy.zeros((n_conditions), dtype=bool)
+    MAXANGLE = wvl/2./scale
+    if angle is None:
+        angle = MAXANGLE
     
-    # enough coverage
+    # enough coverage of input for output
     INPUTSIZE = n_in*scale
-    OUTPUTSIZE = 2.*angle*MAXZ + n_out*scale
-    conditions[0] = ((INPUTSIZE >= OUTPUTSIZE)
-                     or numpy.isclose(INPUTSIZE,OUTPUTSIZE,rtol=1e-2))
+    SPREAD = 2.*angle*MAXZ
+    OUTPUTSIZE = n_out*scale
+    conditions[0] = ((INPUTSIZE >= OUTPUTSIZE + SPREAD)
+                     or numpy.isclose(INPUTSIZE, OUTPUTSIZE + SPREAD, rtol=1e-2))
     if conditions[0] == False:
-        print('Currently having {}m of input, while it needs {}m.'.format(
-            INPUTSIZE*scale,OUTPUTSIZE*scale))
+        print('Currently having {}px of input, and need total {}px output,'.format(INPUTSIZE/scale,OUTPUTSIZE/scale+SPREAD/scale)
+              + '\nwhere {}px for accurate output and {}px of buffer,'.format(OUTPUTSIZE/scale,SPREAD/scale))
+    
+    # enough screen size to accommodate all data
+    SCREENSIZE = N*scale
+    conditions[1] = ((SCREENSIZE >= INPUTSIZE)
+                     or numpy.isclose(SCREENSIZE,INPUTSIZE,rtol=1e-2))
+    if conditions[1] == False:
+        print('Currently having {}m of screen, while it needs {}m.'.format(
+            SCREENSIZE,INPUTSIZE))
     
     # no wrapping on output
     DATASPACE = (n_in/2. + n_out/2.)*scale
     WRAPPING = angle*MAXZ
-    AVAILABLESPACES = n_in*scale
-    conditions[1] = ((AVAILABLESPACES >= DATASPACE+WRAPPING)
-                     or numpy.isclose(AVAILABLESPACES,DATASPACE+WRAPPING,rtol=1e-2))
-    if conditions[1] == False:
-        print('Currently there is a wrapping effect in the desired accurate region of the output'
-              +'\nThere is {}m avaliable spaces, while the wrapping+edge is {}m'.format(
-                  AVAILABLESPACES*scale,(DATASPACE+WRAPPING)*scale))
-    
-    # no aliasing in angular-spectrum
-    MAXANGLE = wvl/2./scale
-    conditions[2] = ((MAXANGLE >= angle) or numpy.isclose(MAXANGLE,angle,rtol=1e-2))
+    AVAILABLESPACES = N*scale
+    USE = DATASPACE + WRAPPING
+    conditions[2] = ((AVAILABLESPACES >= USE)
+                     or numpy.isclose(AVAILABLESPACES,USE,rtol=1e-2))
     if conditions[2] == False:
+        print('Currently there is a wrapping effect in the desired accurate region of the output'
+              +'\nThere is {}m avaliable spaces, while it needs {}m'.format(
+                  AVAILABLESPACES,USE))
+        
+    # no false edge reaching pupil (inward direction while previous condition is outward)
+    BUFFER = (n_in - n_out)/2*scale
+    WRAPPING = angle*MAXZ
+    conditions[3] = ((BUFFER >= WRAPPING) or numpy.isclose(BUFFER,WRAPPING,rtol=1e-2))
+    if conditions[3] == False:
+        print('There is an inward wrapping. Need more input.')
+        print('suggest input of {}px. currently have {}px'.format(n_out + 2*MAXANGLE*MAXZ/scale,n_in))
+    
+    # enough coverage in angular-spectrum
+    conditions[4] = ((MAXANGLE >= angle) or numpy.isclose(MAXANGLE,angle,rtol=1e-2))
+    if conditions[4] == False:
         print('Cannot simulate the physically max angular spectrum'
               + '\nSimulation Max is {}arcsec, while {}arcsec is needed'.format(
                   MAXANGLE*206265,angle*206265))
     
     # no aliasing in optical transfer function
     REQUIREPIXEL = wvl*MAXZ/scale**2
-    conditions[3] = ((n_in >= REQUIREPIXEL) or numpy.isclose(n_in,REQUIREPIXEL,rtol=1e-2))
-    if conditions[3] == False:
+    conditions[5] = ((N >= REQUIREPIXEL) or numpy.isclose(N,REQUIREPIXEL,rtol=1e-2))
+    if conditions[5] == False:
         print('There is aliasing in optical transfer function'
               + '\nRequire simulating {} pixels, currently at {} pixels'.format(
-                  REQUIREPIXEL,n_in))
+                  REQUIREPIXEL,N))
     
     condition = conditions.all()
     
@@ -574,8 +836,8 @@ def test_propagation_parameters(wvl,turbHs,DMHs,
 
 def physical_atmosphere_propagation(
             phase_screens, output_mask, layer_altitudes, source_altitude,
-            wavelength, output_pixel_scale, max_diffraction_angle,
-            propagation_direction="up", input_efield=None):
+            wavelength, output_pixel_scale,
+            propagation_direction="up", input_efield=None, max_angle=None):
     '''
     Finds total line of sight complex amplitude by propagating light through phase screens
 
@@ -622,10 +884,14 @@ def physical_atmosphere_propagation(
         logger.debug("propagate to first phase screen")
         z = abs(scrnAlts[0] - ht)
         z_total += z
-        EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
-                    EFieldBuf, wavelength,
-                    output_pixel_scale, output_pixel_scale, z,
-                    max_diffraction_angle)
+        if max_angle is None:
+            EFieldBuf[:] = opticalpropagation.angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z)
+        else:
+            EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z, max_angle)
 
     # Go through and propagate between phase screens
     for i in scrnRange:
@@ -653,16 +919,23 @@ def physical_atmosphere_propagation(
         z_total += z
 
         # Do ASP for last layer to next
-        EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
-                    EFieldBuf, wavelength,
-                    output_pixel_scale, output_pixel_scale, z,
-                    max_diffraction_angle)
+        if max_angle is None:
+            EFieldBuf[:] = opticalpropagation.angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z)
+        else:
+            EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z, max_angle)
+        
+    if(ht_final == 0) and (output_mask is not None):
+        EFieldBuf *= output_mask
 
     return EFieldBuf
 
 def physical_correction_propagation(
         correction, output_mask, dm_altitudes,
-        wavelength, output_pixel_scale, max_diffraction_angle, input_efield=None):
+        wavelength, output_pixel_scale, input_efield=None, max_angle=None):
     scrnNo = len(correction)
     scrnRange = range(0, scrnNo)
 
@@ -688,10 +961,14 @@ def physical_correction_propagation(
     if ht != scrnAlts[0]:
         logger.debug("propagate to first phase screen")
         z = ht - scrnAlts[0]
-        EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
-                    EFieldBuf, wavelength,
-                    output_pixel_scale, output_pixel_scale, z,
-                    max_diffraction_angle)
+        if max_angle is None:
+            EFieldBuf[:] = opticalpropagation.angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z)
+        else:
+            EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z, max_angle)
 
     # Go through and propagate between phase screens
     for i in scrnRange:
@@ -711,11 +988,17 @@ def physical_correction_propagation(
             z = -(scrnAlts[i+1] - scrnAlts[i])
 
         # Do ASP for last layer to next
-        EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
-                    EFieldBuf, wavelength,
-                    output_pixel_scale, output_pixel_scale, z,
-                    max_diffraction_angle)
-        
+        if max_angle is None:
+            EFieldBuf[:] = opticalpropagation.angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z)
+        else:
+            EFieldBuf[:] = opticalpropagation.limited_angularSpectrum(
+                        EFieldBuf, wavelength,
+                        output_pixel_scale, output_pixel_scale, z, max_angle)
+    if output_mask is not None:
+        EFieldBuf *= output_mask
+    
     return EFieldBuf
 
 class ElongLineOfSight(object):

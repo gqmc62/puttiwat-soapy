@@ -133,7 +133,7 @@ class PY_Configurator(object):
             self.scis.append(SciConfig(sci))
             self.scis[sci].loadParams(self.configDict["Science"])
 
-        self.calcParams()
+        # self.calcParams()
 
     def calcParams(self):
         """
@@ -231,18 +231,60 @@ class PY_Configurator(object):
             #                            * max_height/self.pixel_scale
             #                         + self.wholeScrnSize)/self.wholeScrnSize))
             # self.wholeScrnSize *= oversize
-            self.sim.max_diffraction_angle = (2.*max_wavelength/self.atmos.r0)
-            # self.sim.max_diffraction_angle = max_wavelength/2.*self.sim.pxlScale
-            self.sim.scrnSize = numpy.ceil(2*
+            # max_num_px = 0
+            # for iwfs in range(self.sim.nGS):
+            #     new = self.wfss[iwfs].nxSubaps*self.wfss[iwfs].pxlsPerSubap
+            #     max_num_px = numpy.max([new,max_num_px])
+            # for isci in range(self.sim.nSci):
+            #     new = self.scis[isci].pxls
+            #     max_num_px = numpy.max([new,max_num_px])
+                
+            # this is physical angle not simulation grid angle
+            normScrnStrengths = self.atmos.scrnStrengths/(self.atmos.scrnStrengths.sum())
+            scrnStrengths = ( ((self.atmos.r0**(-5./3.))
+                                    *normScrnStrengths)**(-3./5.) )
+            self.sim.max_diffraction_angle = 2.*max_wavelength*numpy.max([
+                1/self.atmos.r0, (1/scrnStrengths).sum()])
+            
+            # self.sim.max_grid_diffraction_angle = 0
+            # for iwfs in range(self.sim.nGS):
+            #     new_contestant = self.wfss[iwfs].wavelength/(2.*self.tel.telDiam
+            #         /(self.wfss[iwfs].nxSubaps*self.wfss[iwfs].pxlsPerSubap))
+            #     self.sim.max_grid_diffraction_angle = numpy.max([new_contestant,self.sim.max_grid_diffraction_angle])
+            # for isci in range(self.sim.nSci):
+            #     FOVPxlNo1 = int(numpy.round(
+            #         self.tel.telDiam * 
+            #             self.scis[isci].FOV/self.scis[isci].wavelength
+            #              * numpy.pi / (180. * 3600)
+            #         ))
+            #     crop_fov_factor1 = 1 + self.sim.pupilSize // FOVPxlNo1
+            #     FOVPxlNo1 *= crop_fov_factor1
+            #     FOVPxlNo1 = int(numpy.round(FOVPxlNo1/2)*2)
+            #     sciCamPixelScale1 = float(self.tel.telDiam) / float(FOVPxlNo1)
+                
+            #     new_contestant = self.scis[isci].wavelength/2./sciCamPixelScale1
+            #     self.sim.max_grid_diffraction_angle = numpy.max([new_contestant,self.sim.max_grid_diffraction_angle])
+            
+            
+            
+            
+            # self.sim.max_sim_fov = 2*numpy.max([abs(maxGSPos) + max_subapFOV/2.,
+            #               abs(maxSciPOS) + max_sci_fov/2.]) * ASEC2RAD
+            self.sim.max_sim_fov = 2*numpy.max([abs(maxGSPos),abs(maxSciPOS)]) * ASEC2RAD
+            
+            self.sim.scrnSize = int(numpy.ceil((
                     self.sim.pxlScale * max_height
-                    * (numpy.max([abs(maxGSPos) + max_subapFOV/2.,
-                                  abs(maxSciPOS) + max_sci_fov/2.])*ASEC2RAD
-                       + self.sim.max_diffraction_angle) )+self.sim.simSize
+                    * (self.sim.max_sim_fov + 2*self.sim.max_diffraction_angle)
+                     + self.sim.simSize)
+                /2.)*2)
+            
+            # # up scale scrnSize to the next subaperture
+            # self.sim.scrnSize = int(numpy.ceil(
+            #     self.sim.scrnSize
+            #     /self.wfss[0].pxlsPerSubap)*self.wfss[0].pxlsPerSubap)
             
             self.sim.max_height = max_height
-            self.sim.max_sim_fov = 2*numpy.max([abs(maxGSPos) + max_subapFOV/2.,
-                          abs(maxSciPOS) + max_sci_fov/2.]) * ASEC2RAD
-            # self.sim.max_sim_fov = 0.
+            
         else:
             self.sim.scrnSize = numpy.ceil(2*
                 self.sim.pxlScale * self.atmos.scrnHeights.max()
@@ -254,16 +296,16 @@ class PY_Configurator(object):
         if self.sim.scrnSize % 2 != 0:
             self.sim.scrnSize += 1
 
-        # Check if any WFS use physical propogation.
-        # If so, make oversized phase scrns
-        wfsPhys = False
-        for wfs in range(self.sim.nGS):
-            if self.wfss[wfs].propagationMode == "Physical":
-                wfsPhys = True
-                break
-        if wfsPhys:
-            self.sim.scrnSize *= 2
-            # self.sim.scrnSize *= 1
+        # # Check if any WFS use physical propogation.
+        # # If so, make oversized phase scrns
+        # wfsPhys = False
+        # for wfs in range(self.sim.nGS):
+        #     if self.wfss[wfs].propagationMode == "Physical":
+        #         wfsPhys = True
+        #         break
+        # if wfsPhys:
+        #     self.sim.scrnSize *= 2
+        #     # self.sim.scrnSize *= 1
 
         # If any wfs exposure times set to None, set to the sim loopTime
         for wfs in self.wfss:
@@ -291,11 +333,16 @@ class PY_Configurator(object):
             if dm.diameter is None:
                 dm.diameter = self.tel.telDiam
                 if PHYSICAL == True:
-                    dm.diameter += ((2*self.sim.max_diffraction_angle
-                                       + self.sim.max_sim_fov) * dm.altitude)
-        if dm.nxActuators is not None:
-            dm.nxActuators = int(numpy.ceil(
-                dm.diameter/self.tel.telDiam*(dm.nxActuators - 1)) + 1)
+                    dm.diameter += ((2.*self.sim.max_diffraction_angle
+                                        + self.sim.max_sim_fov) * dm.altitude)
+                    # dm.diameter += ((2.*self.sim.max_diffraction_angle) * dm.altitude)
+
+            if dm.nxActuators is None:
+                dm.nxActuators = int(numpy.ceil(
+                    dm.diameter/(self.tel.telDiam/self.wfss[0].nxSubaps
+                                 )/2.)*2.
+                    + 1)
+                dm.diameter = (dm.nxActuators - 1)*(self.tel.telDiam/self.wfss[0].nxSubaps)
 
 
     def __iter__(self):
@@ -395,7 +442,7 @@ class YAML_Configurator(PY_Configurator):
             self.scis.append(SciConfig(None))
             self.scis[nSci].loadParams(sciDict)
 
-        self.calcParams()
+        # self.calcParams()
 
 
 class ConfigObj(object):
@@ -621,6 +668,7 @@ class SimConfig(ConfigObj):
                             'totalWfsData',
                             'totalActs',
                             'saveHeader',
+                            'max_grid_diffraction_angle',
                             'max_diffraction_angle',
                             'max_height',
                             'max_sim_fov',

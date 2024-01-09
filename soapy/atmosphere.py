@@ -470,7 +470,7 @@ def makePhaseScreens(
         return scrns
 
 
-class InfinitePhaseScreen(infinitephasescreen.PhaseScreenVonKarman):
+class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
     def __init__(
             self, nx_size, pixel_scale, r0, L0, wind_speed,
             time_step, wind_direction, random_seed=None, n_columns=2):

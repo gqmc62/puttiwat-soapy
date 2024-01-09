@@ -345,7 +345,7 @@ class Piezo(DM):
         """
         activeActs = []
         xActs = self.dmConfig.nxActuators
-        self.spcing = self.nx_dm_elements/float(xActs)
+        self.spcing = self.nx_dm_elements/float(xActs - 1)
 
         for x in xrange(xActs):
             for y in xrange(xActs):

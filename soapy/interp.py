@@ -1,5 +1,6 @@
 import numpy
 from scipy.interpolate import interp2d,RectBivariateSpline, griddata
+from scipy.interpolate import interp2d,RectBivariateSpline, griddata, LinearNDInterpolator 
 #a lookup dict for interp2d order (expressed as 'kind')
 INTERP_KIND = {1: 'linear', 3:'cubic', 5:'quintic'}
 
@@ -71,7 +72,8 @@ def zoom_rbs(array, newSize, order=3):
         xSize = int(newSize[0])
         ySize = int(newSize[1])
 
-    except IndexError:
+    # except IndexError:
+    except:
         xSize = ySize = int(newSize)
 
     coordsX = numpy.linspace(0, array.shape[0]-1, xSize)

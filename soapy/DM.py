@@ -48,6 +48,8 @@ from scipy.ndimage.interpolation import rotate
 import astropy.io.fits as fits
 import aotools
 
+from matplotlib import pyplot as plt
+
 from aotools import karhunenLoeve as KL
 from . import logger, interp
 # from .aotools import interp, circle
@@ -501,6 +503,9 @@ class FastPiezo(Piezo):
 
         self.actGrid[:] = 0
         self.actGrid[(self.valid_act_coords[:, 0], self.valid_act_coords[:, 1])] = actCoeffs*self.config.iMatValue
+        # plt.imshow(self.actGrid)
+        # plt.colorbar()
+        # plt.show()
 
         # Add space around edge for 1 extra act to avoid edge effects
         actGrid = numpy.pad(self.actGrid, ((1,1), (1,1)), mode="constant")

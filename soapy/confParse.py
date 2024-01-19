@@ -239,7 +239,7 @@ class PY_Configurator(object):
             #     new = self.scis[isci].pxls
             #     max_num_px = numpy.max([new,max_num_px])
                 
-            # this is physical angle not simulation grid angle
+            # # this is physical angle not simulation grid angle
             normScrnStrengths = self.atmos.scrnStrengths/(self.atmos.scrnStrengths.sum())
             scrnStrengths = ( ((self.atmos.r0**(-5./3.))
                                     *normScrnStrengths)**(-3./5.) )
@@ -275,8 +275,14 @@ class PY_Configurator(object):
             self.sim.scrnSize = int(numpy.ceil((
                     self.sim.pxlScale * max_height
                     * (self.sim.max_sim_fov + 2*self.sim.max_diffraction_angle)
-                     + self.sim.simSize)
+                      + self.sim.simSize)
                 /2.)*2)
+            
+            # self.sim.scrnSize = int(numpy.ceil((
+            #         self.sim.pxlScale * max_height
+            #         * (self.sim.max_sim_fov)
+            #           + self.sim.simSize)
+            #     /2.)*2)
             
             # # up scale scrnSize to the next subaperture
             # self.sim.scrnSize = int(numpy.ceil(
@@ -333,9 +339,10 @@ class PY_Configurator(object):
             if dm.diameter is None:
                 dm.diameter = self.tel.telDiam
                 if PHYSICAL == True:
-                    dm.diameter += ((2.*self.sim.max_diffraction_angle
-                                        + self.sim.max_sim_fov) * dm.altitude)
+                    # dm.diameter += ((2.*self.sim.max_diffraction_angle
+                    #                     + self.sim.max_sim_fov) * dm.altitude)
                     # dm.diameter += ((2.*self.sim.max_diffraction_angle) * dm.altitude)
+                    dm.diameter += ((self.sim.max_sim_fov) * dm.altitude)
 
             if dm.nxActuators is None:
                 dm.nxActuators = int(numpy.ceil(

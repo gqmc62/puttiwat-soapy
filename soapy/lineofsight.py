@@ -172,14 +172,14 @@ class LineOfSight(object):
             self.nx_out_pixels = self.simConfig.simSize
         else:
             self.nx_out_pixels = nx_out_pixels
-            self.max_input_pixel = nx_out_pixels
+            self.nx_in_pixels = nx_out_pixels
             
         if self.config.propagationMode == 'Physical':
             
             self.max_grid_diffraction_angle = self.wavelength/2./self.out_pixel_scale
-            # self.max_diffraction_angle = self.soapy_config.sim.max_diffraction_angle + self.fov/2.
+            self.max_diffraction_angle = self.soapy_config.sim.max_diffraction_angle
             # self.max_simulation_angle = None
-            self.max_simulation_angle = self.max_grid_diffraction_angle
+            # self.max_simulation_angle = self.max_grid_diffraction_angle
             
 
             
@@ -188,7 +188,12 @@ class LineOfSight(object):
             # this is a big threat to soapy as soapy is so flexible
             # things don't always share the same pixel scale
             
-            self.max_input_pixel = int(numpy.ceil(
+            # self.nx_in_pixels = int(numpy.ceil(
+            #     (self.nx_out_pixels
+            #      + numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
+            #      * (2*self.max_grid_diffraction_angle)/self.out_pixel_scale)
+            #     /2)*2)
+            self.nx_in_pixels = int(numpy.ceil(
                 (self.nx_out_pixels
                  + numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
                  * (2*self.max_grid_diffraction_angle)/self.out_pixel_scale)
@@ -199,10 +204,14 @@ class LineOfSight(object):
             self.nx_prop_pixels = int(round(
                 numpy.max([
                     
-                    2*self.max_input_pixel,
+                    self.nx_in_pixels,
+                    
+                    self.nx_out_pixels,
                     
                     self.wavelength*numpy.max(numpy.concatenate([
-                        self.layer_altitudes,self.dm_altitudes,[0]]))/self.out_pixel_scale**2
+                        self.layer_altitudes,self.dm_altitudes,[0]]))/self.out_pixel_scale**2,
+                    
+                    self.wavelength/2./self.nx_out_pixels
                     
                     ])
                 /2)*2)
@@ -216,14 +225,14 @@ class LineOfSight(object):
             self.low_buf = (self.nx_prop_pixels - self.nx_out_pixels)//2
             self.high_buf = (self.nx_prop_pixels + self.nx_out_pixels)//2
             
-            self.pad = (self.nx_prop_pixels - self.max_input_pixel)//2
+            self.pad = (self.nx_prop_pixels - self.nx_in_pixels)//2
             
             test_result = test_propagation_parameters(self.wavelength,self.layer_altitudes,self.dm_altitudes,
                                         self.nx_prop_pixels,
-                                        self.max_input_pixel,
+                                        self.nx_in_pixels,
                                         self.nx_out_pixels*self.pupil_size/self.sim_size,
                                         self.out_pixel_scale,
-                                        self.max_simulation_angle)
+                                        self.max_grid_diffraction_angle)
             
             if (test_result == False):
                 print('Propagation Parameter need adjustment')
@@ -240,43 +249,50 @@ class LineOfSight(object):
             
         self.plot_mask = aotools.circle(temp1,temp2)
             
-        if False:#self.mask is not None:
+        if self.mask is not None:
             self.outMask = interp.zoom_rbs (
                     self.mask, self.nx_out_pixels, order=1)#.round()
         else:
-            self.outMask = None
-            # self.outMask = interp.zoom(
-            #         self.mask, self.nx_out_pixels)#.round()
+            self.outMask = interp.zoom(
+                    self.mask, self.nx_out_pixels)#.round()
+            
+        self.prop_mask = numpy.zeros((self.nx_prop_pixels,self.nx_prop_pixels))
+        self.nprop2nout = (self.nx_prop_pixels - self.nx_out_pixels)//2
+        if self.nprop2nout == 0:
+            self.prop_mask = self.outMask
+        else:
+            if self.nprop2nout > 0:
+                self.prop_mask[self.nprop2nout:-self.nprop2nout,self.nprop2nout:-self.nprop2nout] = self.outMask
 
         self.output_phase_diameter = self.nx_out_pixels * self.out_pixel_scale
         
 
         # Calculate coords of phase at each altitude
-        self.layer_metapupil_coords = numpy.zeros((self.n_layers, 2, self.max_input_pixel))
+        self.layer_metapupil_coords = numpy.zeros((self.n_layers, 2, self.nx_in_pixels))
         for i in range(self.n_layers):
             x1, x2, y1, y2 = self.calculate_altitude_coords(self.layer_altitudes[i])
-            self.layer_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.max_input_pixel)
-            self.layer_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.max_input_pixel)
+            self.layer_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
+            self.layer_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
 
         # ensure coordinates aren't out of bounds for interpolation
         self.layer_metapupil_coords = self.layer_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
 
         # Calculate coords of phase at each DM altitude
-        self.dm_metapupil_coords = numpy.zeros((self.n_dm, 2, self.max_input_pixel))
+        self.dm_metapupil_coords = numpy.zeros((self.n_dm, 2, self.nx_in_pixels))
         for i in range(self.n_dm):
             x1, x2, y1, y2 = self.calculate_altitude_coords(self.dm_altitudes[i])
-            self.dm_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.max_input_pixel)
-            self.dm_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.max_input_pixel)
+            self.dm_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
+            self.dm_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
         self.dm_metapupil_coords = self.dm_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
 
         self.radii = None
         
         # Relavent phase  centred on the line of sight direction
-        self.phase_screens = numpy.zeros((self.n_layers, self.max_input_pixel, self.max_input_pixel))
+        self.phase_screens = numpy.zeros((self.n_layers, self.nx_in_pixels, self.nx_in_pixels))
         # Buffer for corection across fulll FOV
-        self.correction_screens = numpy.zeros((self.n_dm, self.max_input_pixel, self.max_input_pixel))
+        self.correction_screens = numpy.zeros((self.n_dm, self.nx_in_pixels, self.nx_in_pixels))
         # Relavent correction centred on the line of sight direction
-        self.phase_correction = numpy.zeros((self.max_input_pixel, self.max_input_pixel))
+        self.phase_correction = numpy.zeros((self.nx_in_pixels, self.nx_in_pixels))
         if self.config.propagationMode == 'Physical':
             self.phase_screens_buf = numpy.zeros((self.n_layers, self.nx_prop_pixels, self.nx_prop_pixels))
             self.correction_screens_buf = numpy.zeros((self.n_dm, self.nx_prop_pixels, self.nx_prop_pixels))
@@ -305,10 +321,10 @@ class LineOfSight(object):
                 
         if self.config.propagationMode == 'Physical':
             if self.source_altitude != 0:
-                meta_pupil_size = (self.max_input_pixel*self.out_pixel_scale * (1 - layer_altitude / self.source_altitude))
+                meta_pupil_size = (self.nx_in_pixels*self.out_pixel_scale * (1 - layer_altitude / self.source_altitude))
                 # print('currently not supporting this')
             else:
-                meta_pupil_size = self.max_input_pixel*self.out_pixel_scale
+                meta_pupil_size = self.nx_in_pixels*self.out_pixel_scale
         else:
             if self.source_altitude != 0:
                 meta_pupil_size = self.output_phase_diameter * (1 - layer_altitude / self.source_altitude)
@@ -446,7 +462,7 @@ class LineOfSight(object):
             #         plt.show()
             
         self.EField_buf[:] = physical_atmosphere_propagation(
-            self.phase_screens_buf, self.outMask, self.layer_altitudes, self.source_altitude,
+            self.phase_screens_buf, self.prop_mask, self.layer_altitudes, self.source_altitude,
             self.wavelength, self.out_pixel_scale,
             propagation_direction=self.propagation_direction,
             input_efield=self.EField_buf, max_angle=None)
@@ -457,8 +473,8 @@ class LineOfSight(object):
         self.EField = self.EField_buf[self.low_buf:self.high_buf,
                                       self.low_buf:self.high_buf]
         
-        if self.outMask is not None:
-            self.EField[:] = np.copy(self.EField[:] * self.outMask)
+        # if self.prop_mask is not None:
+        #     self.EField_buf[:] = np.copy(self.EField_buf[:] * self.prop_mask)
 
         return self.EField#,self.EField_buf 
 
@@ -598,19 +614,23 @@ class LineOfSight(object):
         
         original_state = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
                                             self.low_buf:self.high_buf])
-        
+        original_state_buf = numpy.copy(self.EField_buf)
         physical_correction_propagation(
             self.correction_screens_buf, None, self.dm_altitudes,
             self.wavelength, self.out_pixel_scale,
             input_efield=self.EField_buf, max_angle=None)
+
         self.EField = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
                                       self.low_buf:self.high_buf])
-        
+        if self.outMask is not None:
+            self.EField *= self.outMask
         self.residual_EField = numpy.copy(self.EField)
+        self.residual_EField_buf = numpy.copy(self.EField_buf)
         self.correction_EField = numpy.copy(original_state/self.EField)
+        self.correction_EField_buf = numpy.copy(original_state_buf/self.EField_buf)
         
         if self.outMask is not None:
-            mean_phase = np.sum(self.EField*self.outMask)/np.sum(self.outMask)
+            mean_phase = np.sum(self.EField)/np.sum(self.outMask)
         else:
             mean_phase = np.mean(self.EField)
         mean_phase /= np.abs(mean_phase)
@@ -618,22 +638,24 @@ class LineOfSight(object):
         
         self.EField /= mean_phase
         
+        
         self.residual = np.angle(self.EField) / self.phs2Rad
         self.phase = self.residual * self.phs2Rad
         
         plot = False#((self.scrns.sum() != 0) or (correction.sum() != 0))
-        if plot:
+        if plot and (self.config.type == 'ShackHartmann'):
             A = original_state.shape[-1]
             B = self.plot_mask.shape[0]
             
             if (self.scrns.sum() != 0):
                 
-                regular_atm = self.plot_mask*(np.angle(np.exp(1j*(self.phase_screens_buf[:,
-                                                                  self.low_buf:self.high_buf,
-                                                                  self.low_buf:self.high_buf][
-                                                                      :,(A-B)//2:(A+B)//2,
-                                                                      (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
-                plt.imshow(regular_atm)#, vmin=-numpy.pi,vmax=numpy.pi)
+                # regular_atm = self.plot_mask*(np.angle(np.exp(1j*(self.phase_screens_buf[:,
+                #                                                   self.low_buf:self.high_buf,
+                #                                                   self.low_buf:self.high_buf][
+                #                                                       :,(A-B)//2:(A+B)//2,
+                #                                                       (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
+                regular_atm = (np.angle(np.exp(1j*(self.phase_screens_buf).sum(0))/mean_phase))
+                plt.imshow(regular_atm, vmin=-numpy.pi,vmax=numpy.pi)
                 plt.title('atm phase no prop : {}'.format(self.config.type))
                 plt.colorbar()
                 plt.show()
@@ -641,8 +663,9 @@ class LineOfSight(object):
                 
                 if (self.layer_altitudes != 0).any():
                 
-                    prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2]/mean_phase)
+                    # prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
+                    #                                     (A-B)//2:(A+B)//2]/mean_phase)
+                    prop_atm_phase = np.angle(original_state/mean_phase)
                     plt.imshow(prop_atm_phase, vmin=-numpy.pi,vmax=numpy.pi)
                     plt.title('atm phase : {}'.format(self.config.type))
                     plt.colorbar()
@@ -657,9 +680,11 @@ class LineOfSight(object):
             
                 if (correction is not None):
                     
-                    regular_dm = self.plot_mask*np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
-                                                  self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2].sum(0))/mean_phase)
+                    # regular_dm = self.plot_mask*np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
+                    #                               self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
+                    #                                     (A-B)//2:(A+B)//2].sum(0))/mean_phase)
+                    regular_dm = np.angle(np.exp(1j*(self.correction_screens_buf).sum(0))/mean_phase)
+                                                                               
                     plt.imshow(regular_dm,vmin=-numpy.pi,vmax=numpy.pi)
                     # plt.title('dm phase no prop')
                     plt.title('dm phase at altitude : {}'.format(self.config.type))
@@ -668,16 +693,20 @@ class LineOfSight(object):
                     
                     # if True:#(self.dm_altitudes != 0).any():
                     
-                    prop_dm_phase = self.plot_mask*np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2]
+                    # prop_dm_phase = self.plot_mask*np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
+                    #                                     (A-B)//2:(A+B)//2]
+                    #                     /mean_phase)
+                    prop_dm_phase = np.angle(self.correction_EField_buf
                                         /mean_phase)
                     plt.imshow(prop_dm_phase,vmin=-numpy.pi,vmax=numpy.pi)
                     plt.title('dm phase : {}'.format(self.config.type))
                     plt.colorbar()
                     plt.show()
                     
-                    prop_dm_intensity = self.plot_mask * np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2]
+                    # prop_dm_intensity = self.plot_mask * np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
+                    #                                     (A-B)//2:(A+B)//2]
+                    #                   /mean_phase)**2
+                    prop_dm_intensity = np.abs(self.correction_EField_buf
                                       /mean_phase)**2
                     plt.imshow(prop_dm_intensity,vmin=0,vmax=3)
                     plt.title('dm intensity : {}'.format(self.config.type))
@@ -702,8 +731,9 @@ class LineOfSight(object):
                                        / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
                                        / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
                     
-                    prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2])
+                    # prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
+                    #                                     (A-B)//2:(A+B)//2])
+                    prop_res_phase = np.angle(self.EField_buf)
                     plt.imshow(prop_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
                     plt.title('res phase,\n'
                               + '{}: strehl={}'.format(self.config.type, strehl))
@@ -712,8 +742,9 @@ class LineOfSight(object):
                     
                     if (self.layer_altitudes != 0).any() or (self.dm_altitudes != 0).any():
                     
-                        prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
-                                                            (A-B)//2:(A+B)//2])**2
+                        # prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
+                        #                                     (A-B)//2:(A+B)//2])**2
+                        prop_res_intensity = np.abs(self.EField_buf)**2
                         plt.imshow(prop_res_intensity,vmin=0,vmax=3)
                         plt.colorbar()
                         plt.title('res intensity,\n'
@@ -885,6 +916,11 @@ def physical_atmosphere_propagation(
         z = abs(scrnAlts[0] - ht)
         z_total += z
         if max_angle is None:
+            # if (phase_screens.sum() == 0) or (z == 0) or (input_efield is None):
+            #     plot = False
+            # else:
+            #     plot = True
+            plot = False
             EFieldBuf[:] = opticalpropagation.angularSpectrum(
                         EFieldBuf, wavelength,
                         output_pixel_scale, output_pixel_scale, z)
@@ -962,6 +998,11 @@ def physical_correction_propagation(
         logger.debug("propagate to first phase screen")
         z = ht - scrnAlts[0]
         if max_angle is None:
+            # if (correction.sum() == 0) or (z == 0) or (input_efield is None):
+            #     plot = False
+            # else:
+            #     plot = True
+            plot = False
             EFieldBuf[:] = opticalpropagation.angularSpectrum(
                         EFieldBuf, wavelength,
                         output_pixel_scale, output_pixel_scale, z)

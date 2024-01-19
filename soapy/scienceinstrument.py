@@ -280,7 +280,7 @@ class PSFCamera(object):
         
         # plt.imshow(numpy.log10(self.detector/self.detector.max()),vmin=-3,vmax=0)
         # plt.colorbar()
-        # plt.title('science detector')
+        # plt.title('science detector in log10')
         # plt.show()
 
 
@@ -344,10 +344,10 @@ class PSFCamera(object):
             
             res = self.mask / self.los.phs2Rad * numpy.angle(numpy.exp(1j*res))
             
-            plt.imshow(res)
-            plt.title('science residual nm geom')
-            plt.colorbar()
-            plt.show()
+            # plt.imshow(res)
+            # plt.title('science residual nm geom')
+            # plt.colorbar()
+            # plt.show()
     
             ms_wfe = numpy.square(res).sum() / self.mask.sum()
             rms_wfe = numpy.sqrt(ms_wfe)

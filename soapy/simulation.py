@@ -607,7 +607,35 @@ class Sim(object):
         except KeyboardInterrupt:
             self.go = False
             logger.info("\nSim exited by user\n")
-
+        
+        # TITLE = '\nr0={:.0f}cm,dsub={:.0f}cm,dm@{:.0f}m'.format(self.config.atmos.r0*100,self.config.tel.telDiam/self.config.wfss[0].nxSubaps*100,self.config.dms[0].altitude)
+        
+        # plt.imshow(numpy.angle(numpy.exp(1j*self.atmos.scrns.sum(0)#*self.mask
+        #                                  *1e-9/self.config.scis[0].wavelength*2.*numpy.pi)),
+        #            vmin=-numpy.pi,vmax=numpy.pi)
+        # plt.colorbar()
+        # plt.title('geometrical atmosphere phase' + TITLE)
+        # plt.show()
+        
+        # plt.imshow(self.wfss[0].detector/self.wfss[0].detector.max(),vmin=0,vmax=1)
+        # plt.colorbar()
+        # plt.title('wfs detector plane' + TITLE)
+        # plt.show()
+        
+        # plt.imshow(numpy.log10(self.sciCams[0].detector/self.sciCams[0].detector.max()),vmin=-3,vmax=0)
+        # plt.colorbar()
+        # plt.title('science detector in log10' + TITLE)
+        # plt.show()
+        
+        # plt.imshow(numpy.angle(self.sciCams[0].EField_fov))
+        # plt.colorbar()
+        # plt.title('pupil phase science detector' + TITLE)
+        # plt.show()
+        
+        # plt.imshow(self.combinedCorrection.sum(0))#*self.mask)
+        # plt.colorbar()
+        # plt.title('dm shape at altitude' + TITLE)
+        # plt.show()
 
         # Finally save data after loop is over.
         self.saveData()

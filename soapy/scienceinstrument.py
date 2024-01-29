@@ -317,11 +317,11 @@ class PSFCamera(object):
             
             residual_field = numpy.copy(self.los.EField[pad:-pad,pad:-pad])*self.mask
             
-            # piston = residual_field.sum()/self.mask.sum()
-            # piston /= numpy.abs(piston)
+            piston = residual_field.sum()/self.mask.sum()
+            piston /= numpy.abs(piston)
             
-            # residual_field /= piston
-            # residual_field *= self.mask
+            residual_field /= piston
+            residual_field *= self.mask
             
             # plt.imshow(numpy.angle(residual_field)*self.mask,vmin=-numpy.pi,vmax=numpy.pi)
             # plt.title('science residual rad phys')
@@ -343,11 +343,6 @@ class PSFCamera(object):
             res -= (piston*self.mask)
             
             res = self.mask / self.los.phs2Rad * numpy.angle(numpy.exp(1j*res))
-            
-            # plt.imshow(res)
-            # plt.title('science residual nm geom')
-            # plt.colorbar()
-            # plt.show()
     
             ms_wfe = numpy.square(res).sum() / self.mask.sum()
             rms_wfe = numpy.sqrt(ms_wfe)

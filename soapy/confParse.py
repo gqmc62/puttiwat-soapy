@@ -255,7 +255,7 @@ class PY_Configurator(object):
             #     FOVPxlNo1 = int(numpy.round(
             #         self.tel.telDiam * 
             #             self.scis[isci].FOV/self.scis[isci].wavelength
-            #              * numpy.pi / (180. * 3600)
+            #               * numpy.pi / (180. * 3600)
             #         ))
             #     crop_fov_factor1 = 1 + self.sim.pupilSize // FOVPxlNo1
             #     FOVPxlNo1 *= crop_fov_factor1
@@ -265,7 +265,7 @@ class PY_Configurator(object):
             #     new_contestant = self.scis[isci].wavelength/2./sciCamPixelScale1
             #     self.sim.max_grid_diffraction_angle = numpy.max([new_contestant,self.sim.max_grid_diffraction_angle])
             
-            
+            # self.sim.max_diffraction_angle = self.sim.max_grid_diffraction_angle
             
             
             # self.sim.max_sim_fov = 2*numpy.max([abs(maxGSPos) + max_subapFOV/2.,
@@ -339,10 +339,10 @@ class PY_Configurator(object):
             if dm.diameter is None:
                 dm.diameter = self.tel.telDiam
                 if PHYSICAL == True:
-                    # dm.diameter += ((2.*self.sim.max_diffraction_angle
-                    #                     + self.sim.max_sim_fov) * dm.altitude)
+                    dm.diameter += ((2.*self.sim.max_diffraction_angle
+                                        + self.sim.max_sim_fov) * dm.altitude)
                     # dm.diameter += ((2.*self.sim.max_diffraction_angle) * dm.altitude)
-                    dm.diameter += ((self.sim.max_sim_fov) * dm.altitude)
+                    # dm.diameter += ((self.sim.max_sim_fov) * dm.altitude)
 
             if dm.nxActuators is None:
                 dm.nxActuators = int(numpy.ceil(

@@ -3,10 +3,18 @@ A generalised module to provide phase or the EField through a "Line Of Sight"
 
 Line of Sight Object
 ====================
-The module contains a 'lineOfSight' object, which calculates the resulting phase or complex amplitude from propogating through the atmosphere in a given
-direction. This can be done using either geometric propagation, where phase is simply summed for each layer, or physical propagation, where the phase is propagated between layers using an angular spectrum propagation method. Light can propogate either up or down.
+The module contains a 'lineOfSight' object, which calculates the resulting
+phase or complex amplitude from propogating through the atmosphere in a given
+direction. This can be done using either geometric propagation, where phase is
+simply summed for each layer, or physical propagation, where the phase is
+propagated between layers using an angular spectrum propagation method. Light
+can propogate either up or down.
 
-The Object takes a 'config' as an argument, which is likely to be the same config object as the module using it (WFSs, ScienceCams, or LGSs). It should contain paramters required, such as the observation direction and light wavelength. The `config` also determines whether to use physical or geometric propagation through the 'propagationMode' parameter.
+The Object takes a 'config' as an argument, which is likely to be the same
+config object as the module using it (WFSs, ScienceCams, or LGSs). It should
+contain paramters required, such as the observation direction and light
+wavelength. The `config` also determines whether to use physical or geometric
+propagation through the 'propagationMode' parameter.
 
 Examples::
 
@@ -49,16 +57,22 @@ ASEC2RAD = 1./RAD2ASEC
 
 class LineOfSight(object):
     """
-    A "Line of sight" through a number of turbulence layers in the atmosphere, observing ing a given direction.
+    A "Line of sight" through a number of turbulence layers in the atmosphere,
+    observing ing a given direction.
 
     Parameters:
         config: The soapy config for the line of sight
         simConfig: The soapy simulation config object
-        propagation_direction (str, optional): Direction of light propagation, either `"up"` or `"down"`
-        outPxlScale (float, optional): The EField pixel scale required at the output (m/pxl)
+        propagation_direction (str, optional): Direction of light propagation,
+        either `"up"` or `"down"`
+        outPxlScale (float, optional): The EField pixel scale required at the
+        output (m/pxl)
         nOutPxls (int, optional): Number of pixels to return in EFIeld
-        mask (ndarray, optional): Mask to apply at the *beginning* of propagation
-        metaPupilPos (list, dict, optional): A list or dictionary of the meta pupil position at each turbulence layer height ub metres. If None, works it out from GS position.
+        mask (ndarray, optional): Mask to apply at the *beginning* of
+        propagation
+        metaPupilPos (list, dict, optional): A list or dictionary of the meta
+        pupil position at each turbulence layer height ub metres. If None,
+        works it out from GS position.
     """
     def __init__(
             self, config, soapyConfig,
@@ -81,11 +95,15 @@ class LineOfSight(object):
         self.layer_altitudes = self.soapy_config.atmos.scrnHeights
 
         self.n_dm = self.soapy_config.sim.nDM
-        self.dm_altitudes = numpy.array([self.soapy_config.dms[dm_n].altitude for dm_n in range(self.n_dm)])
+        self.dm_altitudes = numpy.array(
+            [self.soapy_config.dms[dm_n].altitude
+             for dm_n in range(self.n_dm)])
 
-        # If the line of sight has a launch position, must include in calculations! Conver to metres from centre of telescope
+        # If the line of sight has a launch position, must include in
+        # calculations! Conver to metres from centre of telescope
         try:
-            self.launch_position = numpy.array(self.config.launchPosition) * self.telescope_diameter/2.
+            self.launch_position = (numpy.array(self.config.launchPosition)
+                                    * self.telescope_diameter/2.)
         except AttributeError:
             self.launch_position = numpy.array([0, 0])
 
@@ -176,10 +194,11 @@ class LineOfSight(object):
             
         if self.config.propagationMode == 'Physical':
             
-            self.max_grid_diffraction_angle = self.wavelength/2./self.out_pixel_scale
-            self.max_diffraction_angle = self.soapy_config.sim.max_diffraction_angle
+            # self.max_grid_diffraction_angle = self.wavelength/2./self.out_pixel_scale
+            # self.max_diffraction_angle = self.soapy_config.sim.max_diffraction_angle
             # self.max_simulation_angle = None
             # self.max_simulation_angle = self.max_grid_diffraction_angle
+            self.max_diffraction_angle = self.wavelength/2./self.out_pixel_scale
             
 
             
@@ -196,7 +215,7 @@ class LineOfSight(object):
             self.nx_in_pixels = int(numpy.ceil(
                 (self.nx_out_pixels
                  + numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
-                 * (2*self.max_grid_diffraction_angle)/self.out_pixel_scale)
+                 * (2*self.max_diffraction_angle)/self.out_pixel_scale)
                 /2)*2)
             
             
@@ -204,9 +223,8 @@ class LineOfSight(object):
             self.nx_prop_pixels = int(round(
                 numpy.max([
                     
-                    self.nx_in_pixels,
-                    
-                    self.nx_out_pixels,
+                    (self.nx_in_pixels),# + (numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
+                                        # * (2*self.max_diffraction_angle)/self.out_pixel_scale)),
                     
                     self.wavelength*numpy.max(numpy.concatenate([
                         self.layer_altitudes,self.dm_altitudes,[0]]))/self.out_pixel_scale**2,
@@ -232,10 +250,10 @@ class LineOfSight(object):
                                         self.nx_in_pixels,
                                         self.nx_out_pixels*self.pupil_size/self.sim_size,
                                         self.out_pixel_scale,
-                                        self.max_grid_diffraction_angle)
+                                        self.max_diffraction_angle)
             
             if (test_result == False):
-                print('Propagation Parameter need adjustment')
+                print('Propagation Parameter need adjustment for : {}'.format(self.config.type))
             # else:
             #     print('Pass propagation criteria list')
             
@@ -378,12 +396,15 @@ class LineOfSight(object):
         
     def makePhase(self, radii=None, apos=None):
         """
-        Generates the required phase or EField. Uses difference approach depending on whether propagation is geometric or physical
+        Generates the required phase or EField. Uses difference approach
+        depending on whether propagation is geometric or physical
         (makePhaseGeometric or makePhasePhys respectively)
 
         Parameters:
-            radii (dict, optional): Radii of each meta pupil of each screen height in pixels. If not given uses pupil radius.
-            apos (ndarray, optional):  The angular position of the GS in radians. If not set, will use the config position
+            radii (dict, optional): Radii of each meta pupil of each screen
+            height in pixels. If not given uses pupil radius.
+            apos (ndarray, optional):  The angular position of the GS in
+            radians. If not set, will use the config position
         """
         
         # Check if geometric or physical
@@ -395,11 +416,14 @@ class LineOfSight(object):
 
     def makePhaseGeometric(self, radii=None, apos=None):
         '''
-        Creates the total phase along line of sight offset by a given angle using a geometric ray tracing approach
+        Creates the total phase along line of sight offset by a given angle
+        using a geometric ray tracing approach
 
         Parameters:
-            radii (dict, optional): Radii of each meta pupil of each screen height in pixels. If not given uses pupil radius.
-            apos (ndarray, optional):  The angular position of the GS in radians. If not set, will use the config position
+            radii (dict, optional): Radii of each meta pupil of each screen
+            height in pixels. If not given uses pupil radius.
+            apos (ndarray, optional):  The angular position of the GS in
+            radians. If not set, will use the config position
         '''
 
         for i in range(self.scrns.shape[0]):
@@ -427,11 +451,14 @@ class LineOfSight(object):
 
     def makePhasePhys(self, radii=None, apos=None):
         '''
-        Finds total line of sight complex amplitude by propagating light through phase screens
+        Finds total line of sight complex amplitude by propagating light
+        through phase screens
 
         Parameters:
-            radii (dict, optional): Radii of each meta pupil of each screen height in pixels. If not given uses pupil radius.
-            apos (ndarray, optional):  The angular position of the GS in radians. If not set, will use the config position
+            radii (dict, optional): Radii of each meta pupil of each screen
+            height in pixels. If not given uses pupil radius.
+            apos (ndarray, optional):  The angular position of the GS in
+            radians. If not set, will use the config position
         '''
         
         for i in range(self.scrns.shape[0]):
@@ -462,19 +489,20 @@ class LineOfSight(object):
             #         plt.show()
             
         self.EField_buf[:] = physical_atmosphere_propagation(
-            self.phase_screens_buf, self.prop_mask, self.layer_altitudes, self.source_altitude,
+            self.phase_screens_buf, None, self.layer_altitudes, self.source_altitude,
             self.wavelength, self.out_pixel_scale,
             propagation_direction=self.propagation_direction,
             input_efield=self.EField_buf, max_angle=None)
         
-        # self.phase[:] = numpy.angle(self.EField[:])
+        if self.prop_mask is not None:
+            self.EField_buf[:] = np.copy(self.EField_buf[:] * self.prop_mask)
         
+        self.phase[:] = numpy.angle(self.EField[:])
         
         self.EField = self.EField_buf[self.low_buf:self.high_buf,
                                       self.low_buf:self.high_buf]
         
-        # if self.prop_mask is not None:
-        #     self.EField_buf[:] = np.copy(self.EField_buf[:] * self.prop_mask)
+        
 
         return self.EField#,self.EField_buf 
 
@@ -521,69 +549,8 @@ class LineOfSight(object):
         self.residual = (self.phase - self.phase_correction - np.angle(mean_phase)) / self.phs2Rad
 
         self.phase = self.residual * self.phs2Rad
-        
-        # plot = False
-        # if ((correction is not None)
-        #     and (self.scrns.sum() != 0)
-        #     and (self.config.type == 'ShackHartmann')
-        #     and plot):
-            
-        #     A = original_state.shape[-1]
-        #     B = self.nx_out_pixels
-            
-        #     prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
-        #                                         (A-B)//2:(A+B)//2]/mean_phase)
-        #     plt.imshow(prop_atm_phase, vmin=-numpy.pi,vmax=numpy.pi)
-        #     plt.title('atm phase geometric')
-        #     plt.colorbar()
-        #     plt.show()
-        #     prop_atm_intensity = self.plot_mask * np.abs(original_state[(A-B)//2:(A+B)//2,
-        #                                         (A-B)//2:(A+B)//2]/mean_phase)**2
-        #     plt.imshow(prop_atm_intensity,
-        #                 vmin=0,vmax=3)
-        #     plt.title('atm intensity geometric')
-        #     plt.colorbar()
-        #     plt.show()
-            
-        #     prop_dm_phase = self.plot_mask*np.angle(numpy.exp(1j*self.phase_correction[(A-B)//2:(A+B)//2,
-        #                                         (A-B)//2:(A+B)//2])
-        #                         /mean_phase)
-        #     plt.imshow(prop_dm_phase,vmin=-numpy.pi,vmax=numpy.pi)
-        #     plt.title('dm phase geometric')
-        #     plt.colorbar()
-        #     plt.show()
-            
-        #     prop_dm_intensity = self.plot_mask * np.abs(numpy.exp(1j*self.phase_correction[(A-B)//2:(A+B)//2,
-        #                                         (A-B)//2:(A+B)//2])
-        #                       /mean_phase)**2
-        #     plt.imshow(prop_dm_intensity,vmin=0,vmax=3)
-        #     plt.title('dm intensity geometric')
-        #     plt.colorbar()
-        #     plt.show()
-            
-        #     # not true as this still runs with recon from wfs/dm with propagation
-        #     # regular_res_phase = self.plot_mask*(np.angle(np.exp(1j*(
-        #     #     regular_atm - regular_dm))/mean_phase))
-        #     # plt.imshow(regular_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
-        #     # plt.title('residal phase no prop')
-        #     # plt.colorbar()
-        #     # plt.show()
-            
-        #     prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
-        #                                         (A-B)//2:(A+B)//2])
-        #     plt.imshow(prop_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
-        #     plt.title('res phase geometric')
-        #     plt.colorbar()
-        #     plt.show()
-            
-        #     prop_res_phase = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
-        #                                         (A-B)//2:(A+B)//2])**2
-        #     plt.imshow(prop_res_phase,vmin=0,vmax=3)
-        #     plt.title('res intensity geometric')
-        #     plt.colorbar()
-        #     plt.show()
-            
     
+            
     def performCorrectionPhysical(self, correction):
         # either up or down, still need to start from pupil, ... right?
         # anyway for 'down' definitely need to pick up from the pupil
@@ -643,18 +610,18 @@ class LineOfSight(object):
         self.phase = self.residual * self.phs2Rad
         
         plot = False#((self.scrns.sum() != 0) or (correction.sum() != 0))
-        if plot and (self.config.type == 'ShackHartmann'):
+        if plot :#and (self.config.type == 'ShackHartmann'):
             A = original_state.shape[-1]
             B = self.plot_mask.shape[0]
             
             if (self.scrns.sum() != 0):
                 
-                # regular_atm = self.plot_mask*(np.angle(np.exp(1j*(self.phase_screens_buf[:,
-                #                                                   self.low_buf:self.high_buf,
-                #                                                   self.low_buf:self.high_buf][
-                #                                                       :,(A-B)//2:(A+B)//2,
-                #                                                       (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
-                regular_atm = (np.angle(np.exp(1j*(self.phase_screens_buf).sum(0))/mean_phase))
+                regular_atm = self.plot_mask*(np.angle(np.exp(1j*(self.phase_screens_buf[:,
+                                                                  self.low_buf:self.high_buf,
+                                                                  self.low_buf:self.high_buf][
+                                                                      :,(A-B)//2:(A+B)//2,
+                                                                      (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
+                # regular_atm = (np.angle(np.exp(1j*(self.phase_screens_buf).sum(0))/mean_phase))
                 plt.imshow(regular_atm, vmin=-numpy.pi,vmax=numpy.pi)
                 plt.title('atm phase no prop : {}'.format(self.config.type))
                 plt.colorbar()
@@ -663,27 +630,31 @@ class LineOfSight(object):
                 
                 if (self.layer_altitudes != 0).any():
                 
-                    # prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
-                    #                                     (A-B)//2:(A+B)//2]/mean_phase)
-                    prop_atm_phase = np.angle(original_state/mean_phase)
+                    prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]/mean_phase)
+                    # prop_atm_phase = np.angle(original_state_buf/mean_phase)
+                    
                     plt.imshow(prop_atm_phase, vmin=-numpy.pi,vmax=numpy.pi)
                     plt.title('atm phase : {}'.format(self.config.type))
                     plt.colorbar()
                     plt.show()
-                    # prop_atm_intensity = self.plot_mask * np.abs(original_state[(A-B)//2:(A+B)//2,
-                    #                                     (A-B)//2:(A+B)//2]/mean_phase)**2
-                    # plt.imshow(prop_atm_intensity,
-                    #             vmin=0,vmax=3)
-                    # plt.title('atm intensity')
-                    # plt.colorbar()
-                    # plt.show()
+                    
+                    prop_atm_intensity = self.plot_mask * np.abs(original_state[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]/mean_phase)**2
+                    # prop_atm_intensity = np.abs(original_state_buf/mean_phase)**2
+                    
+                    plt.imshow(prop_atm_intensity,
+                                vmin=0,vmax=3)
+                    plt.title('atm intensity')
+                    plt.colorbar()
+                    plt.show()
             
                 if (correction is not None):
                     
-                    # regular_dm = self.plot_mask*np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
-                    #                               self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
-                    #                                     (A-B)//2:(A+B)//2].sum(0))/mean_phase)
-                    regular_dm = np.angle(np.exp(1j*(self.correction_screens_buf).sum(0))/mean_phase)
+                    regular_dm = self.plot_mask*np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
+                                                  self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2].sum(0))/mean_phase)
+                    # regular_dm = np.angle(np.exp(1j*(self.correction_screens_buf).sum(0))/mean_phase)
                                                                                
                     plt.imshow(regular_dm,vmin=-numpy.pi,vmax=numpy.pi)
                     # plt.title('dm phase no prop')
@@ -693,21 +664,21 @@ class LineOfSight(object):
                     
                     # if True:#(self.dm_altitudes != 0).any():
                     
-                    # prop_dm_phase = self.plot_mask*np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
-                    #                                     (A-B)//2:(A+B)//2]
-                    #                     /mean_phase)
-                    prop_dm_phase = np.angle(self.correction_EField_buf
+                    prop_dm_phase = self.plot_mask*np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]
                                         /mean_phase)
+                    # prop_dm_phase = np.angle(self.correction_EField_buf
+                    #                     /mean_phase)
                     plt.imshow(prop_dm_phase,vmin=-numpy.pi,vmax=numpy.pi)
                     plt.title('dm phase : {}'.format(self.config.type))
                     plt.colorbar()
                     plt.show()
                     
-                    # prop_dm_intensity = self.plot_mask * np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
-                    #                                     (A-B)//2:(A+B)//2]
-                    #                   /mean_phase)**2
-                    prop_dm_intensity = np.abs(self.correction_EField_buf
+                    prop_dm_intensity = self.plot_mask * np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]
                                       /mean_phase)**2
+                    # prop_dm_intensity = np.abs(self.correction_EField_buf
+                    #                   /mean_phase)**2
                     plt.imshow(prop_dm_intensity,vmin=0,vmax=3)
                     plt.title('dm intensity : {}'.format(self.config.type))
                     plt.colorbar()
@@ -731,9 +702,9 @@ class LineOfSight(object):
                                        / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
                                        / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
                     
-                    # prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
-                    #                                     (A-B)//2:(A+B)//2])
-                    prop_res_phase = np.angle(self.EField_buf)
+                    prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2])
+                    # prop_res_phase = np.angle(self.EField_buf)
                     plt.imshow(prop_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
                     plt.title('res phase,\n'
                               + '{}: strehl={}'.format(self.config.type, strehl))
@@ -742,9 +713,9 @@ class LineOfSight(object):
                     
                     if (self.layer_altitudes != 0).any() or (self.dm_altitudes != 0).any():
                     
-                        # prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
-                        #                                     (A-B)//2:(A+B)//2])**2
-                        prop_res_intensity = np.abs(self.EField_buf)**2
+                        prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
+                                                            (A-B)//2:(A+B)//2])**2
+                        # prop_res_intensity = np.abs(self.EField_buf)**2
                         plt.imshow(prop_res_intensity,vmin=0,vmax=3)
                         plt.colorbar()
                         plt.title('res intensity,\n'
@@ -763,8 +734,10 @@ class LineOfSight(object):
 
         Parameters:
             scrns (list): A list or dict containing the phase screens
-            correction (ndarray, optional): The correction term to take from the phase screens before the WFS is run.
-            read (bool, optional): Should the WFS be read out? if False, then WFS image is calculated but slopes not calculated. defaults to True.
+            correction (ndarray, optional): The correction term to take from
+            the phase screens before the WFS is run.
+            read (bool, optional): Should the WFS be read out? if False, then
+            WFS image is calculated but slopes not calculated. defaults to True.
 
         Returns:
             ndarray: WFS Measurements
@@ -815,8 +788,10 @@ def test_propagation_parameters(wvl,turbHs,DMHs,
     conditions[0] = ((INPUTSIZE >= OUTPUTSIZE + SPREAD)
                      or numpy.isclose(INPUTSIZE, OUTPUTSIZE + SPREAD, rtol=1e-2))
     if conditions[0] == False:
-        print('Currently having {}px of input, and need total {}px output,'.format(INPUTSIZE/scale,OUTPUTSIZE/scale+SPREAD/scale)
-              + '\nwhere {}px for accurate output and {}px of buffer,'.format(OUTPUTSIZE/scale,SPREAD/scale))
+        print('Currently having {}px of input, and need total {}px output,'.format(
+            INPUTSIZE/scale,OUTPUTSIZE/scale+SPREAD/scale)
+              + '\nwhere {}px for accurate output and {}px of buffer,'.format(
+                  OUTPUTSIZE/scale,SPREAD/scale))
     
     # enough screen size to accommodate all data
     SCREENSIZE = N*scale
@@ -828,16 +803,17 @@ def test_propagation_parameters(wvl,turbHs,DMHs,
     
     # no wrapping on output
     DATASPACE = (n_in/2. + n_out/2.)*scale
-    WRAPPING = angle*MAXZ
+    WRAPPING = MAXANGLE*MAXZ
     AVAILABLESPACES = N*scale
     USE = DATASPACE + WRAPPING
     conditions[2] = ((AVAILABLESPACES >= USE)
                      or numpy.isclose(AVAILABLESPACES,USE,rtol=1e-2))
     if conditions[2] == False:
         print('Currently there is a wrapping effect in the desired accurate region of the output'
-              +'\nThere is {}m avaliable spaces, while it needs {}m'.format(
-                  AVAILABLESPACES,USE))
-        
+              +'\nThere is {}px avaliable spaces, while it needs {}px'.format(
+                  AVAILABLESPACES/scale,USE/scale))
+    
+    # conditions[3] = True
     # no false edge reaching pupil (inward direction while previous condition is outward)
     BUFFER = (n_in - n_out)/2*scale
     WRAPPING = angle*MAXZ
@@ -891,7 +867,7 @@ def physical_atmosphere_propagation(
     if input_efield is None:
         EFieldBuf = numpy.exp(
                 1j*numpy.zeros((nx_output_pixels,) * 2)).astype(CDTYPE)
-
+    
     # Get initial up/down dependent params
     if propagation_direction == "up":
         ht = 0

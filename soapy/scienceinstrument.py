@@ -169,7 +169,7 @@ class PSFCamera(object):
         # Calculate ideal PSF for purposes of strehl calculation
         self.los.frame()
         self.calcFocalPlane()
-        self.bestEField = numpy.copy(self.EField_fov)
+        # self.bestEField = numpy.copy(self.EField_fov)
         self.bestPSF = self.detector.copy()
         self.psfMax = self.bestPSF.max()
         self.longExpStrehl = 0
@@ -292,17 +292,19 @@ class PSFCamera(object):
             self.instStrehl = self.detector[self.sciConfig.pxls // 2, self.sciConfig.pxls // 2] / self.psfMax
             self.longExpStrehl = self.long_exp_image[self.sciConfig.pxls //2, self.sciConfig.pxls //2] / self.psfMax
         else:
-            if self.config.propagationMode == "Physical":
-                A = self.EField_fov
-                B = self.bestEField
-                self.instStrehl = (numpy.abs(numpy.sum(A*numpy.conjugate(B)))**2
-                                   / numpy.abs(numpy.sum(A*numpy.conjugate(A)))
-                                   / numpy.abs(numpy.sum(B*numpy.conjugate(B))))
-                self.longExpStrehl = self.long_exp_image.max() / self.psfMax
-                # print(self.instStrehl,'not support long strehl for physical yet',self.longExpStrehl)
-            else:
-                self.instStrehl = self.detector.max() / self.psfMax
-                self.longExpStrehl = self.long_exp_image.max() / self.psfMax
+            self.instStrehl = self.detector.max() / self.psfMax
+            self.longExpStrehl = self.long_exp_image.max() / self.psfMax
+            # if self.config.propagationMode == "Physical":
+            #     A = self.EField_fov
+            #     B = self.bestEField
+            #     self.instStrehl = (numpy.abs(numpy.sum(A*numpy.conjugate(B)))**2
+            #                        / numpy.abs(numpy.sum(A*numpy.conjugate(A)))
+            #                        / numpy.abs(numpy.sum(B*numpy.conjugate(B))))
+            #     self.longExpStrehl = self.long_exp_image.max() / self.psfMax
+            #     print(self.instStrehl,'not support long strehl for physical yet',self.longExpStrehl)
+            # else:
+            #     self.instStrehl = self.detector.max() / self.psfMax
+            #     self.longExpStrehl = self.long_exp_image.max() / self.psfMax
 
 
     def calc_wavefronterror(self):

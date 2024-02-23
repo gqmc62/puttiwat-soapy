@@ -879,7 +879,10 @@ class Sim(object):
             if self.config.sim.saveSciRes:
                 for sci in xrange(self.config.sim.nSci):
                     cut = (self.sciCams[sci].residual.shape[0] - self.sciPhase[sci][i].shape[0])//2
-                    self.sciPhase[sci][i] = self.sciCams[sci].residual[cut:-cut,cut:-cut]
+                    if cut != 0:
+                        self.sciPhase[sci][i] = self.sciCams[sci].residual[cut:-cut,cut:-cut]
+                    else:
+                        self.sciPhase[sci][i] = self.sciCams[sci].residual
 
         if self.config.sim.simName!=None:
             if self.config.sim.saveWfsFrames:

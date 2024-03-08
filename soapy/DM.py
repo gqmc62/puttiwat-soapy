@@ -51,7 +51,7 @@ import aotools
 from matplotlib import pyplot as plt
 
 from aotools import karhunenLoeve as KL
-from . import logger, interp
+from . import logger, interp, atmosphere
 # from .aotools import interp, circle
 
 ASEC2RAD = (1./3600) * (numpy.pi/180.)
@@ -91,6 +91,12 @@ class DM(object):
         self.altitude = self.config.altitude
         self.diameter = self.config.diameter
         self.telescope_diameter = self.soapy_config.tel.telDiam
+        
+        # if self.config.type == 'Aberration':
+        #     if (self.config.subtype == 'Zernike') or (self.config.subtype == 'OneZernike'):
+        #         self.diameter *= numpy.sqrt(2)
+        #         self.diameter += (self.sim_size - self.pupil_size)*(self.telescope_diameter/self.pupil_size)
+        
 
         self.wfss = wfss
 
@@ -539,3 +545,149 @@ class Phase(numpy.ndarray):
     def __array_finalize__(self, obj):
         if obj is None: return
         self.info = getattr(obj, 'info', None)
+
+class Aberration(DM):
+
+    def getActiveActs(self):
+        """
+        Returns the number of active actuators on the DM. Always 0 for aberration.
+        """
+        self.n_active_actuators = 0
+        self.n_valid_actuators = 0
+        return self.n_active_actuators
+    
+    def makeDMFrame(self,actCoeffs=0):
+        if self.config.subtype == 'OneZernike':
+            aberration = self.makeOneZernikeAberration(actCoeffs=actCoeffs)
+        if self.config.subtype == 'Atmosphere':
+            aberration = self.makeAtmosphereAberration(actCoeffs=actCoeffs)
+        if self.config.subtype == 'Zernike':
+            aberration = self.makeZernikeAberration(actCoeffs=actCoeffs)
+        return aberration
+    
+    def makeOneZernikeAberration(self,actCoeffs=0):
+        try:
+            self.noll_variance
+        except:
+            self.noll_variance = get_noll_variance(
+                self.telescope_diameter,self.config.r0,self.config.L0,self.config.nollMode)
+        
+        if (actCoeffs == 0) and (self.config.nollMode != 1):
+            try:
+                aberration = self.aberration
+            except:
+                try:
+                    self.aberrationStrength
+                except:
+                    self.aberrationStrength = numpy.random.normal(0,self.noll_variance**0.5)
+                # aberrationStrength = self.noll_variance**0.5
+                # aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements), dtype=float)
+                # print(self.config.nollMode)
+                
+                aberration = aotools.zernike.zernike_noll(self.config.nollMode, self.nx_dm_elements, 0)
+                aberration *= (numpy.sqrt((numpy.pi * self.nx_dm_elements**2 / 4.)))
+                # aberration /= (self.telescope_diameter/self.pupil_size)
+                # aberration /= (aberration.flatten() * aberration.flatten()).sum()**0.5
+                aberration *= self.aberrationStrength#[*numpy.sqrt(numpy.sqrt(2)**(5./3.))
+                self.aberration = aberration
+                # print(self.noll_variance**0.5)
+                
+                # try:
+                #     self.plotted
+                # except:
+                #     # if self.config.type == 'Aberration':
+                #     plt.imshow(numpy.angle(numpy.exp(1j*aberration)))
+                #     plt.colorbar()
+                #     plt.show()
+                #     self.plotted = True
+            
+            return aberration
+        else:
+            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+        
+    def makeZernikeAberration(self,actCoeffs=0):
+        try:
+            self.noll_variances
+        except:
+            self.noll_variances = numpy.zeros((self.config.nollMode - 1),dtype=float)
+            for i in numpy.arange(self.config.nollMode - 1):
+                self.noll_variances[i] = get_noll_variance(
+                    self.telescope_diameter,self.config.r0,self.config.L0,i + 2)
+            
+        # print(self.noll_variances,aberrationStrengths)
+        # aberrationStrength = self.noll_variance**0.5
+        if (actCoeffs == 0) and (self.config.nollMode != 1):
+            try:
+                aberration = self.aberration
+            except:
+                try:
+                    self.aberrationStrength
+                except:
+                        
+                    self.aberrationStrength = numpy.random.normal(numpy.zeros((self.config.nollMode - 1)),
+                                                             self.noll_variances**0.5)
+                
+                self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements), dtype=float)
+                
+                for i in numpy.arange(self.config.nollMode - 1):                
+                    temp = aotools.zernike.zernike_noll(i + 2, self.nx_dm_elements, 0)
+                    temp *= (numpy.sqrt((numpy.pi * self.nx_dm_elements**2 / 4.)))
+                    # temp /= (self.telescope_diameter/self.pupil_size)
+                    temp *= self.aberrationStrength[i]#[*numpy.sqrt(numpy.sqrt(2)**(5./3.))
+                    self.aberration += temp
+                aberration = self.aberration                    
+                # try:
+                #     self.plotted
+                # except:
+                #     # if self.config.type == 'Aberration':
+                #     plt.imshow(numpy.angle(numpy.exp(1j*aberration)))
+                #     plt.colorbar()
+                #     plt.show()
+                #     self.plotted = True
+            
+            return aberration
+        else:
+            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+
+    def makeAtmosphereAberration(self,actCoeffs=0):
+        if (actCoeffs == 0):
+            try:
+                aberration = self.atm_ab.scrn
+            except:
+                # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
+                self.atm_ab = atmosphere.InfinitePhaseScreen(
+                    self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
+                    self.config.r0, self.config.L0, wind_speed=0,
+                    time_step=0, wind_direction=0, random_seed=None,
+                    n_columns=2)
+                for row in numpy.arange(self.nx_dm_elements):                    
+                    self.atm_ab.add_row()
+                aberration = self.atm_ab.scrn
+                aberration -= aberration.mean()
+            # plt.imshow(aberration);plt.colorbar();plt.show()
+            return aberration
+        else:
+            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+
+def get_noll_variance(D,r0,L0,mode):
+    TABLE = [0.4480, 0.0230, 0.0062, 0.0025, 0.0012]
+    n, _ = aotools.functions.zernike.zernIndex(mode)
+    # D = self.telescope_diameter
+    # r0 = self.config.r0
+    if n == 0:
+        return numpy.nan # don't know what to use 6.88 - 1.0299 ?
+    elif n == 1:
+        # L0 = self.config.L0
+        coeff = TABLE[n-1]
+        A = D/L0
+        correction = (1 - 1.42*A**(1./3.) + 3.70*A**2
+                      - 4.1*A**(7./3.) + 4.21*A**4 - 4.00*A**(13./3.))
+        noll_variance = coeff * (D/r0)**(5./3.) * correction
+    elif n <= len(TABLE):
+        coeff = TABLE[n - 1]
+        noll_variance = coeff * (D/r0)**(5./3.)
+    else:
+        J = mode**(-numpy.sqrt(3)/2) - (mode + 1)**(-numpy.sqrt(3)/2)
+        noll_variance = 0.2944 * J * (D/r0)**(5./3.)
+    return noll_variance
+        

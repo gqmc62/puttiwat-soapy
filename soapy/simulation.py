@@ -361,6 +361,14 @@ class Sim(object):
 
         self.Timat += time.time() - t
         
+        for idm in numpy.arange(self.config.sim.nDM):
+            if self.config.dms[idm]['type'] == 'Aberration':
+                if self.config.dms[idm]['calibrate'] == True:
+                    if self.config.dms[idm]['save'] == True:
+                        with open('aberration_scale.txt','a') as f:
+                            print(self.dms[idm].aberrationStrength, file=f)
+                        f.close()
+        
         #Init DM Command Data saving
         if self.config.sim.saveDmCommands:
             ttActs = 0
@@ -515,6 +523,8 @@ class Sim(object):
                 correction_buffer[dm] = self.dms[dm].dmFrame(
                         dmCommands[ self.dmAct1[dm]:
                                     self.dmAct1[dm]+self.dms[dm].n_valid_actuators])
+                if self.config.dms[dm].type == 'Aberration':
+                    correction_buffer[dm] = self.dms[dm].dmFrame(0)
 
         self.Tdm += time.time() - t
         return correction_buffer
@@ -549,6 +559,9 @@ class Sim(object):
         t = time.time()
         self.scrns = self.atmos.moveScrns()
         self.Tatmos += time.time()-t
+        
+        # plt.imshow(numpy.angle(numpy.exp(1j*self.atmos.infinite_phase_screens[0].scrn)))
+        # plt.show()
 
         # Run Loop...
         ########################################
@@ -576,6 +589,9 @@ class Sim(object):
 
         # Pass whole combined DM shapes to science target
         self.combinedCorrection = self.open_correction + self.closed_correction
+        
+        # plt.imshow(numpy.angle(numpy.exp(1j*self.combinedCorrection[2])))
+        # plt.show()
 
         self.runSciCams(self.combinedCorrection)
 

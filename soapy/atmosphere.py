@@ -157,7 +157,8 @@ class atmos(object):
                 logger.info("Initialise Infinite Phase Screen {}".format(layer+1))
                 phase_screen = InfinitePhaseScreen(
                         self.scrn_size, self.pixel_scale, self.scrnStrengths[layer],
-                        self.L0s[layer], self.windSpeeds[layer], self.looptime, self.windDirs[layer], self._R)
+                        self.L0s[layer], self.windSpeeds[layer], self.looptime,
+                        self.windDirs[layer], random_seed=None)#self._R)
                 for row in range(self.scrn_size):
                     phase_screen.add_row()
                 self.infinite_phase_screens.append(phase_screen)
@@ -474,7 +475,6 @@ class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
     def __init__(
             self, nx_size, pixel_scale, r0, L0, wind_speed,
             time_step, wind_direction, random_seed=None, n_columns=2):
-
         if wind_direction not in (0, 90, 180, 270):
             # Have to make screne bigger to cope with rotaation
             self.nx_output_size = nx_size

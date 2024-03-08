@@ -1144,7 +1144,14 @@ class DmConfig(ConfigObj):
         ("diameter", None),
         ("gauss_width", 0.7),
         ("dmShapesFilename", None),
-        ("loadModule", None)
+        ("loadModule", None),
+        ("nollMode", None),
+        ("aberrationStrength", None),
+        ("calibrate", False),
+        ("subtype", None),
+        ("r0", None),
+        ("L0", None),
+        ("save", None)
     ]
 
     calculatedParams = [

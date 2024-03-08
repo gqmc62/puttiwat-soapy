@@ -255,9 +255,10 @@ class Reconstructor(object):
         total_valid_actuators = 0
         for dm_n, dm in self.dms.items():
             logger.info("Creating Interaction Matrix for DM %d " % (dm_n))
-            dm_imats.append(self.make_dm_iMat(dm, callback=callback))
-
-            total_valid_actuators += dm_imats[dm_n].shape[0]
+            if dm.config.type != 'Aberration':
+                dm_imats.append(self.make_dm_iMat(dm, callback=callback))
+    
+                total_valid_actuators += dm_imats[dm_n].shape[0]
 
         self.interaction_matrix = numpy.zeros((total_valid_actuators, self.sim_config.totalWfsData))
         act_n = 0
@@ -293,6 +294,12 @@ class Reconstructor(object):
             # Now get a DM shape for that command
             phase[:] = 0
             phase[dm.n_dm] = dm.dmFrame(actCommands)
+            for DM_N, DM in self.dms.items():
+                if DM.config.type == 'Aberration':
+                    if DM.config.calibrate == False:
+                        phase[DM_N] = DM.dmFrame(1)
+                    else:
+                        phase[DM_N] = DM.dmFrame(0)
             # Send the DM shape off to the relavent WFS. put result in iMat
             n_wfs_measurments = 0
             for wfs_n, wfs in self.wfss.items():
@@ -306,10 +313,16 @@ class Reconstructor(object):
                 iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = (
                         -1 * wfs.frame(None, phase_correction=phase, iMatFrame=True))# / dm.dmConfig.iMatValue
                 
-                # plt.imshow(wfs.wfsDetectorPlane)
-                # plt.title('wfs')
-                # plt.colorbar()
-                # plt.show()
+                # if i == 40:
+                #     plt.imshow(phase.sum(0))
+                #     plt.title('all geom dm')
+                #     plt.colorbar()
+                #     plt.show()
+                
+                #     plt.imshow(wfs.wfsDetectorPlane)
+                #     plt.title('wfs')
+                #     plt.colorbar()
+                #     plt.show()
                 
                 n_wfs_measurments += wfs.n_measurements
 

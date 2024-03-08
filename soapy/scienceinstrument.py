@@ -336,15 +336,13 @@ class PSFCamera(object):
             return rms_wfe
         
         else:
-            res = (self.los.phase.copy() * self.mask)
+            res = (self.los.phase.copy() * self.mask) / self.los.phs2Rad
     
             # Piston is mean across aperture
             piston = res.sum() / self.mask.sum()
     
             # remove from WFE measurements as its not a problem
             res -= (piston*self.mask)
-            
-            res = self.mask / self.los.phs2Rad * numpy.angle(numpy.exp(1j*res))
     
             ms_wfe = numpy.square(res).sum() / self.mask.sum()
             rms_wfe = numpy.sqrt(ms_wfe)

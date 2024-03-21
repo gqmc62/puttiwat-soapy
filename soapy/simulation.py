@@ -361,13 +361,13 @@ class Sim(object):
 
         self.Timat += time.time() - t
         
-        for idm in numpy.arange(self.config.sim.nDM):
-            if self.config.dms[idm]['type'] == 'Aberration':
-                if self.config.dms[idm]['calibrate'] == True:
-                    if self.config.dms[idm]['save'] == True:
-                        with open('aberration_scale.txt','a') as f:
-                            print(self.dms[idm].aberrationStrength, file=f)
-                        f.close()
+        # for idm in numpy.arange(self.config.sim.nDM):
+        #     if self.config.dms[idm]['type'] == 'Aberration':
+        #         if self.config.dms[idm]['calibrate'] == True:
+        #             if self.config.dms[idm]['save'] == True:
+        #                 with open('aberration_scale.txt','a') as f:
+        #                     print(self.dms[idm].aberrationStrength, file=f)
+        #                 f.close()
         
         #Init DM Command Data saving
         if self.config.sim.saveDmCommands:

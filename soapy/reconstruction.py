@@ -284,6 +284,46 @@ class Reconstructor(object):
         actCommands = numpy.zeros(dm.n_acts)
 
         phase = numpy.zeros((self.n_dms, self.scrn_size, self.scrn_size))
+        
+        
+        ABERRATION = False
+        
+        # zero poke case
+        
+        zero_iMat = numpy.zeros((self.sim_config.totalWfsData))
+        
+        # Set vector of iMat commands and phase to 0
+        actCommands[:] = 0
+        # Now get a DM shape for that command
+        phase[:] = 0
+        phase[dm.n_dm] = dm.dmFrame(actCommands)
+        for DM_N, DM in self.dms.items():
+            if DM.config.type == 'Aberration':
+                ABERRATION = True
+                if DM.config.calibrate == False:
+                    phase[DM_N] = DM.dmFrame(1)
+                else:
+                    phase[DM_N] = DM.dmFrame(0)
+        # Send the DM shape off to the relavent WFS. put result in iMat
+        n_wfs_measurments = 0
+        for wfs_n, wfs in self.wfss.items():
+            # turn off wfs noise if set
+            if self.config.imat_noise is False:
+                wfs_pnoise = wfs.config.photonNoise
+                wfs.config.photonNoise = False
+                wfs_rnoise = wfs.config.eReadNoise
+                wfs.config.eReadNoise = 0
+            
+            zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = (
+                    wfs.frame(None, phase_correction=phase, iMatFrame=True))# / dm.dmConfig.iMatValue
+        # plt.plot(zero_iMat)
+        # plt.show()
+        
+        
+        
+        
+        # poke each dms
+        
         for i in range(dm.n_acts):
             # Set vector of iMat commands and phase to 0
             actCommands[:] = 0
@@ -310,8 +350,14 @@ class Reconstructor(object):
                     wfs_rnoise = wfs.config.eReadNoise
                     wfs.config.eReadNoise = 0
                 
-                iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = (
-                        -1 * wfs.frame(None, phase_correction=phase, iMatFrame=True))# / dm.dmConfig.iMatValue
+                iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = -1 * (
+                    wfs.frame(None, phase_correction=phase, iMatFrame=True)
+                    - zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements])# / dm.dmConfig.iMatValue
+                # plt.plot(wfs.frame(None, phase_correction=phase, iMatFrame=True),label='wfs measurement')
+                # plt.plot(zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements],label='zero')
+                # plt.plot(iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements],label='IM')
+                # plt.legend()
+                # plt.show()
                 
                 # if i == 40:
                 #     plt.imshow(phase.sum(0))
@@ -337,35 +383,56 @@ class Reconstructor(object):
             logger.statusMessage(i, dm.n_acts,
                                  "Generating {} Actuator DM iMat".format(dm.n_acts))
         
-        logger.info("Checking for redundant actuators...")
-        # Now check tath each actuator actually does something on a WFS.
-        # If an act has a <0.1% effect then it will be removed
-        # NOTE: THIS SHOULD REALLY BE DONE ON A PER WFS BASIS
-        valid_actuators = numpy.zeros((dm.n_acts), dtype="int")
-        act_threshold = abs(iMat).max() * 0.001
-        for i in range(dm.n_acts):
-            # plt.plot(i,abs(iMat[i]).max(),marker='o',ls='')
-            if abs(iMat[i]).max() > act_threshold:
-                valid_actuators[i] = 1
-            else:
-                valid_actuators[i] = 0
-        # plt.hlines(act_threshold,0,dm.n_acts)
-        # plt.show()
-
-        dm.valid_actuators = valid_actuators
-        n_valid_acts = valid_actuators.sum()
-        logger.info("DM {} has {} valid actuators ({} dropped)".format(
-                dm.n_dm, n_valid_acts, dm.n_acts - n_valid_acts))
-
-        # Can now make a final interaction matrix with only valid entries
-        valid_iMat = numpy.zeros((n_valid_acts, self.sim_config.totalWfsData))
-        i_valid_act = 0
-        for i in range(dm.n_acts):
-            if valid_actuators[i]:
-                valid_iMat[i_valid_act] = iMat[i]
-                i_valid_act += 1
-
-        return valid_iMat
+        if ABERRATION == True:
+            logger.info("NOT Checking for redundant actuators...")
+            valid_actuators = numpy.ones((dm.n_acts), dtype="int")
+    
+            dm.valid_actuators = valid_actuators
+            n_valid_acts = valid_actuators.sum()
+            logger.info("DM {} has {} valid actuators ({} dropped)".format(
+                    dm.n_dm, n_valid_acts, dm.n_acts - n_valid_acts))
+    
+            # Can now make a final interaction matrix with only valid entries
+            valid_iMat = numpy.zeros((n_valid_acts, self.sim_config.totalWfsData))
+            i_valid_act = 0
+            for i in range(dm.n_acts):
+                if valid_actuators[i]:
+                    valid_iMat[i_valid_act] = iMat[i]
+                    i_valid_act += 1
+    
+            return valid_iMat
+        
+        else:
+            
+            logger.info("Checking for redundant actuators...")
+            # Now check tath each actuator actually does something on a WFS.
+            # If an act has a <0.1% effect then it will be removed
+            # NOTE: THIS SHOULD REALLY BE DONE ON A PER WFS BASIS
+            valid_actuators = numpy.zeros((dm.n_acts), dtype="int")
+            act_threshold = abs(iMat).max() * 0.001
+            for i in range(dm.n_acts):
+                # plt.plot(i,abs(iMat[i]).max(),marker='o',ls='')
+                if abs(iMat[i]).max() > act_threshold:
+                    valid_actuators[i] = 1
+                else:
+                    valid_actuators[i] = 0
+            # plt.hlines(act_threshold,0,dm.n_acts)
+            # plt.show()
+    
+            dm.valid_actuators = valid_actuators
+            n_valid_acts = valid_actuators.sum()
+            logger.info("DM {} has {} valid actuators ({} dropped)".format(
+                    dm.n_dm, n_valid_acts, dm.n_acts - n_valid_acts))
+    
+            # Can now make a final interaction matrix with only valid entries
+            valid_iMat = numpy.zeros((n_valid_acts, self.sim_config.totalWfsData))
+            i_valid_act = 0
+            for i in range(dm.n_acts):
+                if valid_actuators[i]:
+                    valid_iMat[i_valid_act] = iMat[i]
+                    i_valid_act += 1
+    
+            return valid_iMat
 
 
     def get_dm_imat(self, dm_index, wfs_index):
@@ -505,6 +572,9 @@ class MVM(Reconstructor):
         #     #     old_cumulative_actuators = cumulative_actuators
         #     #     print(self.dms[i],new_iMat)
         
+        if self.config.svdConditioning == 'adaptive':
+            rcond = get_rcond_adaptive_threshold_rank(self.interaction_matrix)
+            self.config.svdConditioning = rcond
         logger.info("Invert iMat with conditioning: {:.4f}".format(
                 self.config.svdConditioning))
         self.control_matrix = numpy.linalg.pinv(
@@ -540,7 +610,10 @@ class MVM_SeparateDMs(Reconstructor):
                 wfs_imat = self.get_dm_imat(dm_index, wfs_index)
                 print("DM: {}, WFS: {}".format(dm_index, wfs_index))
                 dm_interaction_matrix[:, n_wfs_measurement:n_wfs_measurement + wfs.n_measurements] = wfs_imat
-
+            
+            if dm.dmConfig.svdConditioning == 'adaptive':
+                rcond = get_rcond_adaptive_threshold_rank(dm_interaction_matrix)
+                dm.dmConfig.svdConditioning = rcond
             dm_control_matrx = numpy.linalg.pinv(dm_interaction_matrix, dm.dmConfig.svdConditioning)
 
             # now put carefully back into one control matrix
@@ -899,7 +972,11 @@ class WooferTweeter(Reconstructor):
         dmCMats = []
         for dm in xrange(self.sim_config.nDM):
             dmIMat = self.dms[dm].iMat
-
+            
+            if self.dms[dm].dmConfig.svdConditioning == 'adaptive':
+                rcond = get_rcond_adaptive_threshold_rank(dmIMat)
+                self.dms[dm].dmConfig.svdConditioning = rcond
+            
             logger.info("Invert DM {} IMat with conditioning:{}".format(dm,self.dms[dm].dmConfig.svdConditioning))
             if dmIMat.shape[0]==dmIMat.shape[1]:
                 dmCMat = numpy.linalg.pinv(dmIMat)
@@ -1076,3 +1153,43 @@ class ANN(Reconstructor):
 
         self.Trecon += time.time()-t
         return dmCommands
+
+def get_rcond_adaptive_threshold_rank(A,plot=False,return_place=False):
+  _,s,_ = numpy.linalg.svd(A)
+  s /= s.max()
+  energy = s**2
+  energy /= energy.sum()
+  accumulated_energy = numpy.zeros_like(energy)
+  threshold = 1/2./numpy.linalg.matrix_rank(A)
+
+  for i in numpy.arange(energy.shape[0]):
+    accumulated_energy[i] = energy[:i].sum()
+  residual = 1 - accumulated_energy
+  place = numpy.where(residual<=threshold)[0][0]
+  
+  if plot==True:
+    # plt.plot(residual,label='residual')
+    # plt.hlines(residual[place],0,s.shape[0])
+    # plt.vlines(place,0,1)
+    # plt.yscale('log')
+    # plt.show()
+
+    plt.plot(s)
+    plt.hlines(s[place],0,s.shape[0])
+    plt.vlines(place,0,1)
+    plt.yscale('log')
+    plt.show()
+  rcond = s[place]
+  if return_place == True:
+    return rcond, place
+  else:
+    return rcond
+
+def pinv_adaptive_threshold_rank(A,return_rcond=False):
+    if return_rcond == False:
+        rcond = get_rcond_adaptive_threshold_rank(A)
+        pinvA = numpy.linalg.pinv(A,rcond=rcond)
+        return pinvA
+    else:
+        rcond, place = get_rcond_adaptive_threshold_rank(A,return_place=True)
+        return pinvA, rcond, place

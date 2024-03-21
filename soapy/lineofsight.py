@@ -204,17 +204,26 @@ class LineOfSight(object):
         if self.config.propagationMode == 'Physical':
             
             if self.propagation_direction == "up":
-                print('This version is definitely not suitable for up propagation')
-                print('This version reduces number of required simulated atmosphere size')
-                print('that requires for the down propagation.')
-                print('Consequently, weird tricks are used to reduce the size of required infinite phase screen')
-                print('This weird trick is working fine though. for the down link free atm.')
-                print('For uplink application, i suggest using consecutive partial propagation instead')
-            print('need fixing the propagation within the telescope!')
+                print('need to validate this version for uplink')
+                print('this version is optimized for downlink')
+                # print('This version is definitely not suitable for up propagation')
+                # print('This version reduces number of required simulated atmosphere size')
+                # print('that requires for the down propagation.')
+                # print('Consequently, mirror_padding are used to reduce the size of required infinite phase screen')
+                # print('This weird trick is working fine though. for the down link free atm.')
+                # print('For uplink application, i suggest using consecutive partial propagation instead')
+                # print('or simply change padding type of symmetric to constant with constant_values=0.')
+                # print('Well, I am unsure about this lol. The free atmosphere does not have actual pupil')
+            # print('need fixing the propagation within the telescope!') priblem solved
+            # print('need to redo propagatio parameter check') not solved need also to redo comments
+            
+            ################
+            # THINGS TO DO #
+            ################
             
             # self.min_z_prop = self.out_pixel_scale / self.wavelength**2
 
-            # self.max_grid_diffraction_angle = self.wavelength/2./self.out_pixel_scale
+            self.max_grid_diffraction_angle = self.wavelength/2./self.out_pixel_scale
             self.max_diffraction_angle = self.soapy_config.sim.max_diffraction_angle
             # self.max_diffraction_angle = self.wavelength/2./self.out_pixel_scale
             
@@ -688,8 +697,8 @@ class LineOfSight(object):
             #               + ' : {}'.format(self.config.type))
             #     plt.show()
         
-        plot = False
-        small_plot = False
+        plot = True
+        small_plot = True
         small_mask = False
         # if dont want any telescope mask in plotting and testing
         # should comment out part in make physphase containing prop_mask
@@ -701,7 +710,7 @@ class LineOfSight(object):
             
             
         physical_correction_propagation(
-            self.correction_screens_buf, None, self.dm_altitudes,
+            self.correction_screens_buf, self.prop_mask, self.dm_altitudes,
             self.wavelength, self.out_pixel_scale,
             input_efield=self.EField_buf, max_angle=None,
             Q2=self.partialmade_Q2,FWFFT=self.forward_FFT,BWFFT=self.backward_FFT)
@@ -731,8 +740,9 @@ class LineOfSight(object):
         self.residual = np.angle(self.EField) / self.phs2Rad
         self.phase = self.residual * self.phs2Rad
         
-        # plot = False#((self.scrns.sum() != 0) or (correction.sum() != 0))
-        if plot :#and (self.config.type == 'ShackHartmann'):
+        plot = ((self.scrns.sum() != 0) or (correction.sum() != 0))
+        plot = False
+        if plot and (self.config.type == 'PSF'):
             
             
             A = original_state.shape[-1]
@@ -787,7 +797,7 @@ class LineOfSight(object):
                     else:
                         prop_atm_intensity = np.abs(original_state_buf/mean_phase)**2
                     
-                    plt.imshow(prop_atm_intensity)#, vmin=0,vmax=3)
+                    plt.imshow(prop_atm_intensity/prop_atm_intensity.mean())#, vmin=0,vmax=3)
                     plt.title('atm intensity')
                     plt.colorbar()
                     plt.show()
@@ -841,7 +851,7 @@ class LineOfSight(object):
                     else:
                         prop_dm_intensity = np.abs(self.correction_EField_buf
                                           /mean_phase)**2
-                    plt.imshow(prop_dm_intensity)#,vmin=0,vmax=3)
+                    plt.imshow(prop_dm_intensity/numpy.nanmean(prop_dm_intensity))#,vmin=0,vmax=3)
                     plt.title('dm intensity : {}'.format(self.config.type))
                     plt.colorbar()
                     plt.show()
@@ -883,17 +893,47 @@ class LineOfSight(object):
                             if small_mask == True:
                                 prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
                                                                     (A-B)//2:(A+B)//2])**2
+                                E = np.copy(self.plot_mask*self.EField[(A-B)//2:(A+B)//2,
+                                                               (A-B)//2:(A+B)//2])
                             else:
                                 prop_res_intensity = np.abs(self.EField[(A-B)//2:(A+B)//2,
                                                                     (A-B)//2:(A+B)//2])**2
+                                E = np.copy(self.EField[(A-B)//2:(A+B)//2,
+                                                (A-B)//2:(A+B)//2])
                         else:
                             prop_res_intensity = np.abs(self.EField_buf)**2
-                        plt.imshow(prop_res_intensity)#,vmin=0,vmax=3)
+                            E = np.copy(self.EField_buf)
+                        plt.imshow(prop_res_intensity/prop_res_intensity.mean())#,vmin=0,vmax=3)
                         plt.colorbar()
                         plt.title('res intensity,\n'
                                   + '{}: strehl={}'.format(self.config.type, strehl))
                         plt.show()
-            
+                        
+                        if self.config.type == 'ShackHartmann':
+                            
+                            E /= np.abs(E)
+                            gx = np.angle( ((E[1:,1:]/E[:-1,1:])*(E[1:,:-1]/E[:-1,:-1]))**0.5 )/self.out_pixel_scale
+                            gy = np.angle( ((E[1:,1:]/E[1:,:-1])*(E[:-1,1:]/E[:-1,:-1]))**0.5 )/self.out_pixel_scale
+                            if small_plot == True:
+                                if small_mask == True:
+                                    prop_res_intensity[self.plot_mask == 0] = np.nan
+                            I = (prop_res_intensity[1:,1:] + prop_res_intensity[:-1,1:]
+                                 + prop_res_intensity[1:,:-1] + prop_res_intensity[:-1,:-1]) / 4.
+                            
+                            # x = np.arange(I.shape[0])*self.out_pixel_scale
+                            # plt.quiver(x,x,I*gx,I*gy)
+                            
+                            Igx = I*gx
+                            Igy = I*gy
+                            w = self.config.pxlsPerSubap//2
+                            binIgx = bin_this(Igx,w)/bin_this(I,w)
+                            binIgy = bin_this(Igy,w)/bin_this(I,w)
+                            x = np.arange(binIgx.shape[0])*self.out_pixel_scale*w
+                            plt.quiver(x,-x,-binIgy,binIgx)
+                            
+                            plt.axis('square')
+                            plt.title('Ig tilt')
+                            plt.show()
 
     def frame(self, scrns=None, correction=None):
         '''
@@ -940,8 +980,16 @@ class LineOfSight(object):
 
 #################################################################################
 
-    
-    
+def bin_this(A, w):
+    # a = numpy.nanmean(A[:(A.shape[0]//w)*w,
+    #       :(A.shape[1]//w)*w].reshape(
+    #           (((A.shape[0]//w),w,((A.shape[1]//w)),w))
+    #           ), axis=(1,3))
+    a = numpy.mean(A[:(A.shape[0]//w)*w,
+          :(A.shape[1]//w)*w].reshape(
+              (((A.shape[0]//w),w,((A.shape[1]//w)),w))
+              ), axis=(1,3))
+    return a
 def physical_atmosphere_propagation(
             phase_screens, output_mask, layer_altitudes, source_altitude,
             wavelength, output_pixel_scale,

@@ -352,7 +352,10 @@ class Sim(object):
 
         # Now know valid actuators for each DM, can get the index of the each DM in the command vector
         self.dmAct1 = []
-        self.config.sim.totalActs = 0
+        self.config.sim.totalActs = int(0)
+        for dm in self.dms.values():
+            self.config.sim.totalActs = int(self.config.sim.totalActs)
+            dm.n_valid_actuators = int(dm.n_valid_actuators)
         for dm in self.dms.values():
             self.dmAct1.append(self.config.sim.totalActs)
             self.config.sim.totalActs += dm.n_valid_actuators

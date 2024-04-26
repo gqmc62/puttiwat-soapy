@@ -925,7 +925,8 @@ class WfsConfig(ConfigObj):
                         ("detector_size", None),
                         ("detector", "CCD"),
                         ("nb_of_photon", None),
-                        ("pupil_separation", 10)
+                        ("pupil_separation", 10),
+                        ("plot", False)
                         ]
 
         # Parameters which may be Set at some point and are allowed
@@ -1150,8 +1151,7 @@ class DmConfig(ConfigObj):
         ("calibrate", False),
         ("subtype", None),
         ("r0", None),
-        ("L0", None),
-        ("save", None)
+        ("L0", None)
     ]
 
     calculatedParams = [

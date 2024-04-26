@@ -83,6 +83,7 @@ import numpy
 import numpy.random
 
 import aotools
+from matplotlib import pyplot as plt
 
 from .. import AOFFT, LGS, logger, lineofsight, interp
 
@@ -442,6 +443,7 @@ class WFS(object):
             self.calcFocalPlane()
 
         self.integrateDetectorPlane()
+        
         if read:
             self.readDetectorPlane()
             self.calculateSlopes()
@@ -459,6 +461,30 @@ class WFS(object):
         #     self.slopes[:] = 0
         if numpy.any(numpy.isnan(self.slopes)):
             numpy.nan_to_num(self.slopes)
+        
+        
+        # P = self.scaledMask*self.interp_efield
+        # Q = self.scaledMask
+        # # plt.quiver(P.real,P.imag)
+        # # plt.axis('square')
+        # # plt.show()
+        # # plt.imshow(numpy.abs(P)**2/(numpy.abs(P)**2).mean(),vmin=0,vmax=3)
+        # # plt.colorbar()
+        # # plt.show()
+        # # plt.imshow(numpy.angle(P),vmin=-numpy.pi,vmax=numpy.pi)
+        # # plt.colorbar()
+        # # plt.show()
+        # strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+        #                     / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+        #                     / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+        # rytov = numpy.var(numpy.log(numpy.abs(P[numpy.asarray(Q,dtype=bool)])))
+        
+        # plt.imshow(self.wfsDetectorPlane/(self.wfsDetectorPlane.max()),vmin=0,vmax=1)
+        # plt.colorbar()
+        # plt.title('wfs detector plane, Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
+        # plt.show()
+        
+        # make_quiver_plot(self)
 
         if read:
             return self.slopes
@@ -562,3 +588,56 @@ class WFS(object):
     @EField.setter
     def EField(self, EField):
         self.los.EField = EField
+        
+
+def make_quiver_plot(wfs):
+    position = wfs.detector_cent_coords
+    N = position.shape[0]
+    
+    step = (position[N//2 + 1,1]
+            - position[N//2,1])
+    position = position // step
+    
+    max_position = position.max()
+    x = numpy.arange(max_position + 1.)
+    x -= max_position/2.
+    yy, xx = numpy.meshgrid(x,x)
+    
+    slopex = wfs.slopes[:N]
+    slopey = wfs.slopes[N:]
+    plt.quiver(xx,-yy,
+               rearrange1(slopex, position).T,
+               rearrange1(-slopey, position).T,
+               scale=5, scale_units='inches')
+    plt.title('SHWFS Slope')
+    plt.axis('square')
+    plt.show()
+    return
+
+def rearrange1(A, position):
+    """
+    rearrange soapy reported wfs value from 1d with skips into 2d
+
+    Parameters
+    ----------
+    A : TYPE
+        DESCRIPTION.
+    position : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    a : TYPE
+        DESCRIPTION.
+
+    """
+    N = position.shape[0]
+    size = numpy.max(position) - numpy.min(position) + 1
+    DIM = position.shape[1]
+    a = numpy.zeros((size,)*DIM, dtype=float)
+    for n in numpy.arange(N):
+        a[tuple(position[n])] = A[n]
+    
+    a[a==0] = numpy.nan
+    
+    return a

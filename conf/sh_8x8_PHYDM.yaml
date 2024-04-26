@@ -1,0 +1,82 @@
+simName: sh_8x8_PHYDM
+pupilSize: 128
+nGS: 1
+nDM: 2
+nSci: 1
+nIters: 10
+loopTime: 0.001
+threads: 4
+
+verbosity: 0
+
+saveCalib: True
+saveSlopes: True
+saveDmCommands: True
+
+saveSciRes: True
+saveWfsFrames: False
+
+saveInstScieField: False
+
+saveSciPsf: True
+saveInstPsf: True
+saveStrehl: True
+saveWfe: True
+
+saveLgsPsf: False
+
+Atmosphere:
+  scrnNo: 1
+  scrnHeights: [0]
+  scrnStrengths: [1]
+  windDirs: [0]
+  windSpeeds: [0,0]
+  r0: 0.02
+  L0: [4]
+  infinite: True
+
+
+Telescope:
+  telDiam: 0.4
+  obsDiam: 0.0
+  mask: circle
+
+WFS:
+  0:
+    type: ShackHartmann
+    GSPosition: [0, 0]
+    GSHeight: 0
+    GSMag: 3
+    nxSubaps: 8
+    pxlsPerSubap: 20
+    subapFOV: 20
+    wavelength: 500e-9
+    propagationMode: Physical
+
+DM:
+  0:
+    type: TT
+    closed: True
+    iMatValue: 0.002
+    gain: 1
+    altitude: 0
+  1:
+    type: FastPiezo
+    closed: True
+    iMatValue: 1
+    gain: 1
+    altitude: 0
+
+Reconstructor:
+  type: MVM
+  svdConditioning: adaptive
+  gain: 1
+
+Science:
+  0:
+    position: [0, 0]
+    FOV: 20
+    wavelength: 500e-9
+    pxls: 200
+    propagationMode: Physical
+

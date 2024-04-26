@@ -282,6 +282,11 @@ class PSFCamera(object):
         # plt.colorbar()
         # plt.title('science detector in log10')
         # plt.show()
+        
+        # plt.imshow(self.detector/self.detector.max(),vmin=0,vmax=1)
+        # plt.colorbar()
+        # plt.title('science detector')
+        # plt.show()
 
 
     def calcInstStrehl(self):
@@ -305,6 +310,20 @@ class PSFCamera(object):
             # else:
             #     self.instStrehl = self.detector.max() / self.psfMax
             #     self.longExpStrehl = self.long_exp_image.max() / self.psfMax
+        
+        # pad = (self.los.nx_out_pixels - self.sim_size)//2 - 1
+        # P = self.mask*self.EField_fov[pad:-pad,pad:-pad]
+        # Q = self.mask
+        
+        # # strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+        # #                     / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+        # #                     / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+        # rytov = numpy.var(numpy.log(numpy.abs(P[numpy.asarray(Q,dtype=bool)])))
+        
+        # plt.imshow(self.detector/self.detector.max(),vmin=0,vmax=1)
+        # plt.colorbar()
+        # plt.title('science detector, Strehl={:.2f}, Rytov={:.2f}'.format(self.instStrehl,rytov))
+        # plt.show()
 
 
     def calc_wavefronterror(self):

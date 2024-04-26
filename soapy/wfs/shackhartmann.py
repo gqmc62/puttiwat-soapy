@@ -409,6 +409,8 @@ class ShackHartmann(wfs.WFS):
         # plt.colorbar()
         # plt.title('wfs detector plane')
         # plt.show()
+        
+        # make_quiver_plot(self)
 
 
     def applyLgsUplink(self):
@@ -600,3 +602,45 @@ def photons_per_mag(mag, mask, phase_scale, exposureTime, zeropoint):
     n_photons *= (10**(-float(mag)/2.5)) * exposureTime
 
     return n_photons
+
+# def make_quiver_plot(wfs):
+#     position = wfs.detector_cent_coords
+#     N = position.shape[0]
+    
+#     step = (position[N//2 + 1,1]
+#             - position[N//2,1])
+#     position = position // step
+    
+#     slopex = wfs.slopes[:N]
+#     slopey = wfs.slopes[N:]
+#     plt.quiver(rearrange1(slopex, position),
+#                 rearrange1(slopey, position),
+#                 scale=1, scale_units='inches')
+#     plt.axis('square')
+#     plt.show()
+#     return
+
+# def rearrange1(A, position):
+#     """
+#     rearrange soapy reported wfs value from 1d with skips into 2d
+
+#     Parameters
+#     ----------
+#     A : TYPE
+#         DESCRIPTION.
+#     position : TYPE
+#         DESCRIPTION.
+
+#     Returns
+#     -------
+#     a : TYPE
+#         DESCRIPTION.
+
+#     """
+#     N = position.shape[0]
+#     size = numpy.max(position) - numpy.min(position) + 1
+#     DIM = position.shape[1]
+#     a = numpy.zeros((size,)*DIM, dtype=float)
+#     for n in numpy.arange(N):
+#         a[tuple(position[n])] = A[n]
+#     return a

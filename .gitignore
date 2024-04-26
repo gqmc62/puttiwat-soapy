@@ -67,4 +67,6 @@ target/
 .vscode/
 
 *.fits
-*.yaml
+*.png
+*.pkl
+.gitignore

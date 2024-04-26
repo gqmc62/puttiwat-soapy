@@ -259,8 +259,14 @@ class LineOfSight(object):
                     
                     (2*self.nx_in_pixels),
                     
-                    (self.nx_in_pixels + (numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
-                                        * (2*self.max_grid_diffraction_angle)/self.out_pixel_scale)),
+                    # (self.nx_in_pixels//2 + self.nx_out_pixels//2
+                    #  + (numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
+                    #                     * (self.max_grid_diffraction_angle)/self.out_pixel_scale)),
+                    
+                    (self.nx_in_pixels
+                     + (numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
+                                        * (self.max_grid_diffraction_angle)/self.out_pixel_scale)),
+                    
                     
                     self.wavelength*numpy.max(numpy.concatenate([
                         self.layer_altitudes,self.dm_altitudes,[0]]))/self.out_pixel_scale**2,
@@ -588,6 +594,7 @@ class LineOfSight(object):
         
         if self.prop_mask is not None:
             self.EField_buf[:] = np.copy(self.EField_buf[:] * self.prop_mask)
+        # print('currently have no pupil funciton!!!!')
         
         self.phase[:] = numpy.angle(self.EField[:])
         
@@ -697,23 +704,39 @@ class LineOfSight(object):
             #               + ' : {}'.format(self.config.type))
             #     plt.show()
         
-        plot = True
-        small_plot = True
-        small_mask = False
+        # plot = False
+        # small_plot = True
+        # small_mask = False
+        
+        # #plot = ((self.scrns.sum() != 0) or (correction.sum() != 0))
+        # # plot = True
+        # if (self.config.type == 'ShackHartmann'):
+        #     if self.config.plot == True:
+        #         plot = True
+        #     else:
+        #         plot = False
+        # else:
+        #     plot = False
+        # plot=True
         # if dont want any telescope mask in plotting and testing
         # should comment out part in make physphase containing prop_mask
         
-        if plot == True:
-            original_state = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
-                                                self.low_buf:self.high_buf])
-            original_state_buf = numpy.copy(self.EField_buf)
+        # if plot == True:
+        #     original_state = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
+        #                                         self.low_buf:self.high_buf])
+        #     original_state_buf = numpy.copy(self.EField_buf)
             
-            
+        if (self.config.type == 'ShackHartmann'):
+            plot = True
+        else:
+            plot = False
+        plot = False
         physical_correction_propagation(
             self.correction_screens_buf, self.prop_mask, self.dm_altitudes,
             self.wavelength, self.out_pixel_scale,
             input_efield=self.EField_buf, max_angle=None,
-            Q2=self.partialmade_Q2,FWFFT=self.forward_FFT,BWFFT=self.backward_FFT)
+            Q2=self.partialmade_Q2,FWFFT=self.forward_FFT,BWFFT=self.backward_FFT,
+            plot=plot)
 
         self.EField = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
                                       self.low_buf:self.high_buf])
@@ -724,9 +747,9 @@ class LineOfSight(object):
         self.residual_EField = numpy.copy(self.EField)
         self.residual_EField_buf = numpy.copy(self.EField_buf)
         
-        if plot == True:
-            self.correction_EField = numpy.copy(original_state/self.EField)
-            self.correction_EField_buf = numpy.copy(original_state_buf/self.EField_buf)
+        # if plot == True:
+        #     self.correction_EField = numpy.copy(original_state/self.EField)
+        #     self.correction_EField_buf = numpy.copy(original_state_buf/self.EField_buf)
         
         if self.outMask is not None:
             mean_phase = np.sum(self.EField)/np.sum(self.outMask)
@@ -740,200 +763,231 @@ class LineOfSight(object):
         self.residual = np.angle(self.EField) / self.phs2Rad
         self.phase = self.residual * self.phs2Rad
         
-        plot = ((self.scrns.sum() != 0) or (correction.sum() != 0))
-        plot = False
-        if plot and (self.config.type == 'PSF'):
-            
-            
-            A = original_state.shape[-1]
-            B = self.plot_mask.shape[0]
-            
-            if True:#(self.scrns.sum() != 0):
-                if small_plot == True:
-                    if small_mask == True:
-                        regular_atm = self.plot_mask*(np.angle(np.exp(1j*(self.phase_screens_buf[:,
-                                                                          self.low_buf:self.high_buf,
-                                                                          self.low_buf:self.high_buf][
-                                                                              :,(A-B)//2:(A+B)//2,
-                                                                              (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
-                    else:
-                        regular_atm = (np.angle(np.exp(1j*(self.phase_screens_buf[:,
-                                                                          self.low_buf:self.high_buf,
-                                                                          self.low_buf:self.high_buf][
-                                                                              :,(A-B)//2:(A+B)//2,
-                                                                              (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
 
-                else:
-                    regular_atm = (np.angle(np.exp(1j*(self.phase_screens_buf).sum(0))/mean_phase))
-                plt.imshow(regular_atm)#, vmin=-numpy.pi,vmax=numpy.pi)
-                plt.title('atm phase no prop : {}'.format(self.config.type))
-                plt.colorbar()
-                plt.show()
-                
-                
-                if (self.layer_altitudes != 0).any():
-                    if small_plot == True:
-                        if small_mask == True:                            
-                            prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]/mean_phase)
-                        else:
-                            prop_atm_phase = np.angle(original_state[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]/mean_phase)
-                    else:
-                        prop_atm_phase = np.angle(original_state_buf/mean_phase)
-                    
-                    plt.imshow(prop_atm_phase)#, vmin=-numpy.pi,vmax=numpy.pi)
-                    plt.title('atm phase : {}'.format(self.config.type))
-                    plt.colorbar()
-                    plt.show()
-                    
-                    if small_plot == True:
-                        if small_mask == True:      
-                            prop_atm_intensity = self.plot_mask * np.abs(original_state[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]/mean_phase)**2
-                        else:
-                            prop_atm_intensity = np.abs(original_state[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]/mean_phase)**2
-                    else:
-                        prop_atm_intensity = np.abs(original_state_buf/mean_phase)**2
-                    
-                    plt.imshow(prop_atm_intensity/prop_atm_intensity.mean())#, vmin=0,vmax=3)
-                    plt.title('atm intensity')
-                    plt.colorbar()
-                    plt.show()
+        
+        # if (plot == True) and (self.config.type == 'ShackHartmann'):
             
-                if (correction is not None):
-                    if small_plot == True:
-                        if small_mask == True:   
-                            regular_dm = self.plot_mask*np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
-                                                          self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2].sum(0))/mean_phase)
-                        else:
-                            regular_dm = np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
-                                                          self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2].sum(0))/mean_phase)
-                    else:
-                        regular_dm = np.angle(np.exp(1j*(self.correction_screens_buf).sum(0))/mean_phase)
+        #     A = original_state.shape[-1]
+        #     B = self.plot_mask.shape[0]
+            
+        #     #if True:#(self.scrns.sum() != 0):
+        #     if (self.scrns.sum() != 0):
+        #         if small_plot == True:
+        #             if small_mask == True:
+        #                 regular_atm = self.plot_mask*(np.angle(np.exp(1j*(self.phase_screens_buf[:,
+        #                                                                   self.low_buf:self.high_buf,
+        #                                                                   self.low_buf:self.high_buf][
+        #                                                                       :,(A-B)//2:(A+B)//2,
+        #                                                                       (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
+        #             else:
+        #                 regular_atm = (np.angle(np.exp(1j*(self.phase_screens_buf[:,
+        #                                                                   self.low_buf:self.high_buf,
+        #                                                                   self.low_buf:self.high_buf][
+        #                                                                       :,(A-B)//2:(A+B)//2,
+        #                                                                       (A-B)//2:(A+B)//2]).sum(0))/mean_phase))
+
+        #         else:
+        #             regular_atm = (np.angle(np.exp(1j*(self.phase_screens_buf).sum(0))/mean_phase))
+        #         plt.imshow(regular_atm, vmin=-numpy.pi,vmax=numpy.pi)
+        #         plt.title('atm phase no prop : {}'.format(self.config.type))
+        #         plt.colorbar()
+        #         plt.show()
+                
+                
+        #         if (self.layer_altitudes != 0).any():
+        #             if small_plot == True:
+        #                 if small_mask == True:                            
+        #                     prop_atm_phase = self.plot_mask*np.angle(original_state[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]/mean_phase)
+        #                 else:
+        #                     prop_atm_phase = np.angle(original_state[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]/mean_phase)
+        #             else:
+        #                 prop_atm_phase = np.angle(original_state_buf/mean_phase)
+                    
+        #             plt.imshow(prop_atm_phase, vmin=-numpy.pi,vmax=numpy.pi)
+        #             plt.title('atm phase : {}'.format(self.config.type))
+        #             plt.colorbar()
+        #             plt.show()
+                    
+        #             if small_plot == True:
+        #                 if small_mask == True:      
+        #                     prop_atm_intensity = self.plot_mask * np.abs(original_state[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]/mean_phase)**2
+        #                     mean_intensity = numpy.nanmean(prop_atm_intensity[np.asarray(self.plot_mask,dtype=bool)])
+        #                 else:
+        #                     prop_atm_intensity = np.abs(original_state[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]/mean_phase)**2
+        #                     temp = numpy.copy(prop_atm_intensity)
+        #                     mean_intensity = numpy.nanmean(temp[np.asarray(self.plot_mask,dtype=bool)])
+        #             else:
+        #                 prop_atm_intensity = np.abs(original_state_buf/mean_phase)**2
+        #                 temp = numpy.copy(prop_atm_intensity[self.low_buf:self.high_buf,
+        #                                                     self.low_buf:self.high_buf][(A-B)//2:(A+B)//2,
+        #                                                                               (A-B)//2:(A+B)//2])
+        #                 mean_intensity = numpy.nanmean(temp[np.asarray(self.plot_mask,dtype=bool)])
+                                                                                                        
+        #             plt.imshow(prop_atm_intensity/mean_intensity, vmin=0,vmax=3)
+        #             plt.title('atm intensity')
+        #             plt.colorbar()
+        #             plt.show()
+
+        #         if (correction is not None):
+        #             if small_plot == True:
+        #                 if small_mask == True:   
+        #                     regular_dm = self.plot_mask*np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
+        #                                                   self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2].sum(0))/mean_phase)
+        #                 else:
+        #                     regular_dm = np.angle(np.exp(1j*(self.correction_screens_buf[:,self.low_buf:self.high_buf,
+        #                                                   self.low_buf:self.high_buf])[:,(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2].sum(0))/mean_phase)
+        #             else:
+        #                 regular_dm = np.angle(np.exp(1j*(self.correction_screens_buf).sum(0))/mean_phase)
                                                                                
-                    plt.imshow(regular_dm)#,vmin=-numpy.pi,vmax=numpy.pi)
-                    # plt.title('dm phase no prop')
-                    plt.title('dm phase at altitude : {}'.format(self.config.type))
-                    plt.colorbar()
-                    plt.show()
+        #             plt.imshow(regular_dm,vmin=-numpy.pi,vmax=numpy.pi)
+        #             # plt.title('dm phase no prop')
+        #             plt.title('dm phase at altitude : {}'.format(self.config.type))
+        #             plt.colorbar()
+        #             plt.show()
                     
-                    # if True:#(self.dm_altitudes != 0).any():
-                    if small_plot == True:
-                        if small_mask == True:
-                            prop_dm_phase = self.plot_mask*np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]
-                                                /mean_phase)
-                        else:
-                            prop_dm_phase = np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]
-                                                /mean_phase)
-                    else:
-                        prop_dm_phase = np.angle(self.correction_EField_buf
-                                            /mean_phase)
-                    plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
-                    plt.title('dm phase : {}'.format(self.config.type))
-                    plt.colorbar()
-                    plt.show()
+        #             # if True:#(self.dm_altitudes != 0).any():
+        #             if small_plot == True:
+        #                 if small_mask == True:
+        #                     prop_dm_phase = self.plot_mask*np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]
+        #                                         /mean_phase)
+        #                 else:
+        #                     prop_dm_phase = np.angle(self.correction_EField[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]
+        #                                         /mean_phase)
+        #             else:
+        #                 prop_dm_phase = np.angle(self.correction_EField_buf
+        #                                     /mean_phase)
+        #             plt.imshow(prop_dm_phase,vmin=-numpy.pi,vmax=numpy.pi)
+        #             plt.title('dm phase : {}'.format(self.config.type))
+        #             plt.colorbar()
+        #             plt.show()
                     
-                    if small_plot == True:
-                        if small_mask == True:
-                            prop_dm_intensity = self.plot_mask * np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]
-                                              /mean_phase)**2
-                        else:
-                            prop_dm_intensity = np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2]
-                                              /mean_phase)**2
-                    else:
-                        prop_dm_intensity = np.abs(self.correction_EField_buf
-                                          /mean_phase)**2
-                    plt.imshow(prop_dm_intensity/numpy.nanmean(prop_dm_intensity))#,vmin=0,vmax=3)
-                    plt.title('dm intensity : {}'.format(self.config.type))
-                    plt.colorbar()
-                    plt.show()
+        #             if small_plot == True:
+        #                 if small_mask == True:
+        #                     prop_dm_intensity = self.plot_mask * np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]
+        #                                       /mean_phase)**2
+        #                     mean_intensity = numpy.nanmean(prop_dm_intensity[np.asarray(self.plot_mask,dtype=bool)])
+        #                 else:
+        #                     prop_dm_intensity = np.abs(self.correction_EField[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2]
+        #                                       /mean_phase)**2
+        #                     temp = numpy.copy(prop_dm_intensity)
+        #                     mean_intensity = numpy.nanmean(temp[np.asarray(self.plot_mask,dtype=bool)])
                     
-                # if ((correction is not None) or (self.scrns.sum() != 0)):
+        #             else:
+        #                 prop_dm_intensity = np.abs(self.correction_EField_buf
+        #                                   /mean_phase)**2
+        #                 temp = numpy.copy(prop_dm_intensity[self.low_buf:self.high_buf,
+        #                                                     self.low_buf:self.high_buf][(A-B)//2:(A+B)//2,
+        #                                           (A-B)//2:(A+B)//2])
+        #                 mean_intensity = numpy.nanmean(temp[np.asarray(self.plot_mask,dtype=bool)])
+                
+        #             plt.imshow(prop_dm_intensity/mean_intensity,vmin=0,vmax=3)
+        #             plt.title('dm intensity : {}'.format(self.config.type))
+        #             plt.colorbar()
+        #             plt.show()
                     
-                    # not true as this still runs with recon from wfs/dm with propagation
-                    # regular_res_phase = self.plot_mask*(np.angle(np.exp(1j*(
-                    #     regular_atm - regular_dm))/mean_phase))
-                    # plt.imshow(regular_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
-                    # plt.title('residal phase no prop')
-                    # plt.colorbar()
-                    # plt.show()
+        #         # if ((correction is not None) or (self.scrns.sum() != 0)):
                     
-                    P = self.plot_mask*self.EField[(A-B)//2:(A+B)//2,
-                                                   (A-B)//2:(A+B)//2]
-                    Q = self.plot_mask
+        #             # not true as this still runs with recon from wfs/dm with propagation
+        #             # regular_res_phase = self.plot_mask*(np.angle(np.exp(1j*(
+        #             #     regular_atm - regular_dm))/mean_phase))
+        #             # plt.imshow(regular_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
+        #             # plt.title('residal phase no prop')
+        #             # plt.colorbar()
+        #             # plt.show()
                     
-                    strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
-                                       / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
-                                       / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
-                    if small_plot == True:
-                        if small_mask == True:
-                            prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2])
-                        else:
-                            prop_res_phase = np.angle(self.EField[(A-B)//2:(A+B)//2,
-                                                                (A-B)//2:(A+B)//2])
-                    else:
-                        prop_res_phase = np.angle(self.EField_buf)
-                    plt.imshow(prop_res_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
-                    plt.title('res phase,\n'
-                              + '{}: strehl={}'.format(self.config.type, strehl))
-                    plt.colorbar()
-                    plt.show()
+        #             P = self.plot_mask*self.EField[(A-B)//2:(A+B)//2,
+        #                                            (A-B)//2:(A+B)//2]
+        #             Q = self.plot_mask
                     
-                    if (self.layer_altitudes != 0).any() or (self.dm_altitudes != 0).any():
-                        if small_plot == True:
-                            if small_mask == True:
-                                prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
-                                                                    (A-B)//2:(A+B)//2])**2
-                                E = np.copy(self.plot_mask*self.EField[(A-B)//2:(A+B)//2,
-                                                               (A-B)//2:(A+B)//2])
-                            else:
-                                prop_res_intensity = np.abs(self.EField[(A-B)//2:(A+B)//2,
-                                                                    (A-B)//2:(A+B)//2])**2
-                                E = np.copy(self.EField[(A-B)//2:(A+B)//2,
-                                                (A-B)//2:(A+B)//2])
-                        else:
-                            prop_res_intensity = np.abs(self.EField_buf)**2
-                            E = np.copy(self.EField_buf)
-                        plt.imshow(prop_res_intensity/prop_res_intensity.mean())#,vmin=0,vmax=3)
-                        plt.colorbar()
-                        plt.title('res intensity,\n'
-                                  + '{}: strehl={}'.format(self.config.type, strehl))
-                        plt.show()
+        #             strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+        #                                / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+        #                                / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+        #             rytov = numpy.var(numpy.log(numpy.abs(P[np.asarray(Q,dtype=bool)])))
+        #             if small_plot == True:
+        #                 if small_mask == True:
+        #                     prop_res_phase = self.plot_mask*np.angle(self.EField[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2])
+        #                 else:
+        #                     prop_res_phase = np.angle(self.EField[(A-B)//2:(A+B)//2,
+        #                                                         (A-B)//2:(A+B)//2])
+        #             else:
+        #                 prop_res_phase = np.angle(self.EField_buf)
+        #             plt.imshow(prop_res_phase,vmin=-numpy.pi,vmax=numpy.pi)
+        #             plt.title('res phase,\n'
+        #                       + '{}: strehl={:.2f}, rytov={:.2f}'.format(self.config.type, strehl,rytov))
+        #             plt.colorbar()
+        #             plt.show()
+                    
+        #             if (self.layer_altitudes != 0).any() or (self.dm_altitudes != 0).any():
+        #                 if small_plot == True:
+        #                     if small_mask == True:
+        #                         prop_res_intensity = self.plot_mask*np.abs(self.EField[(A-B)//2:(A+B)//2,
+        #                                                             (A-B)//2:(A+B)//2])**2
+        #                         E = np.copy(self.plot_mask*self.EField[(A-B)//2:(A+B)//2,
+        #                                                        (A-B)//2:(A+B)//2])
+        #                         mean_intensity = numpy.nanmean(prop_res_intensity[np.asarray(self.plot_mask,dtype=bool)])
+        #                     else:
+        #                         prop_res_intensity = np.abs(self.EField[(A-B)//2:(A+B)//2,
+        #                                                             (A-B)//2:(A+B)//2])**2
+        #                         E = np.copy(self.EField[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2])
+        #                         temp = numpy.copy(prop_res_intensity)
+        #                         mean_intensity = numpy.nanmean(temp[np.asarray(self.plot_mask,dtype=bool)])
                         
-                        if self.config.type == 'ShackHartmann':
+        #                 else:
+        #                     prop_res_intensity = np.abs(self.EField_buf)**2
+        #                     E = np.copy(self.EField_buf)
+        #                     temp = numpy.copy(prop_res_intensity[self.low_buf:self.high_buf,
+        #                                                         self.low_buf:self.high_buf][(A-B)//2:(A+B)//2,
+        #                                               (A-B)//2:(A+B)//2])
+        #                     mean_intensity = numpy.nanmean(temp[np.asarray(self.plot_mask,dtype=bool)])
+                    
+        #                 plt.imshow(prop_res_intensity/mean_intensity,vmin=0,vmax=3)
+        #                 plt.colorbar()
+        #                 plt.title('res intensity,\n'
+        #                           + '{}: strehl={:.2f}, rytov={:.2f}'.format(self.config.type, strehl,rytov))
+        #                 plt.show()
+                        
+        #                 if self.config.type == 'ShackHartmann':
                             
-                            E /= np.abs(E)
-                            gx = np.angle( ((E[1:,1:]/E[:-1,1:])*(E[1:,:-1]/E[:-1,:-1]))**0.5 )/self.out_pixel_scale
-                            gy = np.angle( ((E[1:,1:]/E[1:,:-1])*(E[:-1,1:]/E[:-1,:-1]))**0.5 )/self.out_pixel_scale
-                            if small_plot == True:
-                                if small_mask == True:
-                                    prop_res_intensity[self.plot_mask == 0] = np.nan
-                            I = (prop_res_intensity[1:,1:] + prop_res_intensity[:-1,1:]
-                                 + prop_res_intensity[1:,:-1] + prop_res_intensity[:-1,:-1]) / 4.
+        #                     # plt.imshow(self.detector/self.detector.max(),vmin=0,vmax=1)
+        #                     # plt.colorbar()
+        #                     # plt.title('wfs detector plane')
+        #                     # plt.show()
                             
-                            # x = np.arange(I.shape[0])*self.out_pixel_scale
-                            # plt.quiver(x,x,I*gx,I*gy)
+        #                     E /= np.abs(E)
+        #                     gx = np.angle( ((E[1:,1:]/E[:-1,1:])*(E[1:,:-1]/E[:-1,:-1]))**0.5 )/self.out_pixel_scale
+        #                     gy = np.angle( ((E[1:,1:]/E[1:,:-1])*(E[:-1,1:]/E[:-1,:-1]))**0.5 )/self.out_pixel_scale
+        #                     if small_plot == True:
+        #                         if small_mask == True:
+        #                             prop_res_intensity[self.plot_mask == 0] = np.nan
+        #                     I = (prop_res_intensity[1:,1:] + prop_res_intensity[:-1,1:]
+        #                          + prop_res_intensity[1:,:-1] + prop_res_intensity[:-1,:-1]) / 4.
                             
-                            Igx = I*gx
-                            Igy = I*gy
-                            w = self.config.pxlsPerSubap//2
-                            binIgx = bin_this(Igx,w)/bin_this(I,w)
-                            binIgy = bin_this(Igy,w)/bin_this(I,w)
-                            x = np.arange(binIgx.shape[0])*self.out_pixel_scale*w
-                            plt.quiver(x,-x,-binIgy,binIgx)
+        #                     # x = np.arange(I.shape[0])*self.out_pixel_scale
+        #                     # plt.quiver(x,x,I*gx,I*gy)
                             
-                            plt.axis('square')
-                            plt.title('Ig tilt')
-                            plt.show()
+        #                     Igx = I*gx
+        #                     Igy = I*gy
+        #                     w = self.config.pxlsPerSubap//2
+        #                     binIgx = bin_this(Igx,w)/bin_this(I,w)
+        #                     binIgy = bin_this(Igy,w)/bin_this(I,w)
+        #                     x = np.arange(binIgx.shape[0])*self.out_pixel_scale*w
+        #                     plt.quiver(x,-x,-binIgy,binIgx,scale=500,scale_units='inches')
+                            
+        #                     plt.axis('square')
+        #                     plt.title('Ig tilt')
+        #                     plt.show()
 
     def frame(self, scrns=None, correction=None):
         '''
@@ -1080,7 +1134,7 @@ def physical_atmosphere_propagation(
 def physical_correction_propagation(
         correction, output_mask, dm_altitudes,
         wavelength, output_pixel_scale, input_efield=None, max_angle=None,
-        Q2=None,FWFFT=None,BWFFT=None):
+        Q2=None,FWFFT=None,BWFFT=None,plot=False):
     scrnNo = len(correction)
     scrnRange = range(0, scrnNo)
 
@@ -1101,6 +1155,42 @@ def physical_correction_propagation(
     logger.debug("Create EField Buf of mask")
     
     # print([ht,scrnAlts,ht_final])
+    
+    # plot=False
+    if plot == True:
+    
+        A = EFieldBuf.shape[-1]
+        B = 159#self.plot_mask.shape[0]
+        
+        mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                    (A-B)//2:(A+B)//2])/np.sum(output_mask)
+        
+        prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                    (A-B)//2:(A+B)//2]
+                                    /mean_phase)
+        
+        prop_dm_intensity = np.abs((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                            (A-B)//2:(A+B)//2])**2
+    
+        mean_intensity = numpy.nanmean(prop_dm_intensity[np.asarray(output_mask[(A-B)//2:(A+B)//2,
+                                            (A-B)//2:(A+B)//2],dtype=bool)])
+        
+        P = EFieldBuf[output_mask == True]
+        Q = output_mask[output_mask == True]
+        
+        strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+                            / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+                            / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+        rytov = numpy.var(numpy.log(numpy.abs(P[np.asarray(Q,dtype=bool)])))
+        
+        plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
+        plt.title('phase before corrections: Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
+        plt.colorbar()
+        plt.show()
+        plt.imshow(prop_dm_intensity/mean_intensity)#,vmin=0,vmax=3)
+        plt.title('intensity before corrections: Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
+        plt.colorbar()
+        plt.show()
 
     # Propagate to first phase screen (if not already there)
     if ht != scrnAlts[0]:
@@ -1111,6 +1201,35 @@ def physical_correction_propagation(
 
     # Go through and propagate between phase screens
     for i in scrnRange:
+        
+        if plot == True:
+        
+            A = EFieldBuf.shape[-1]
+            B = 159#self.plot_mask.shape[0]
+            
+            mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2])/np.sum(output_mask)
+            
+            prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]
+                                        /mean_phase)
+            
+            prop_dm_intensity = np.abs((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                (A-B)//2:(A+B)//2])**2
+    
+            mean_intensity = numpy.nanmean(prop_dm_intensity[np.asarray(output_mask[(A-B)//2:(A+B)//2,
+                                                (A-B)//2:(A+B)//2],dtype=bool)])
+            
+            plt.imshow(prop_dm_intensity/mean_intensity)#,vmin=0,vmax=3)
+            plt.title('intensity at dm : {}'.format(i))
+            plt.colorbar()
+            plt.show()
+            
+            plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
+            plt.title('phase before correction at dm : {}'.format(i))
+            plt.colorbar()
+            plt.show()
+
 
         phase = correction[i]
         # print("Got phase")
@@ -1120,6 +1239,29 @@ def physical_correction_propagation(
 
         # Apply phase to EField
         EFieldBuf *= numpy.exp(-1j*phase)
+        
+        if plot == True:
+        
+            A = EFieldBuf.shape[-1]
+            B = 159#self.plot_mask.shape[0]
+            
+            mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2])/np.sum(output_mask)
+            
+            prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2]
+                                        /mean_phase)
+            
+            plt.imshow(numpy.angle(numpy.exp(1j*phase[(A-B)//2:(A+B)//2,
+                                                        (A-B)//2:(A+B)//2])))#,vmin=-numpy.pi,vmax=numpy.pi)
+            plt.title('phase corrected by dm : {}'.format(i))
+            plt.colorbar()
+            plt.show()
+            
+            plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
+            plt.title('phase after correction at dm : {}'.format(i))
+            plt.colorbar()
+            plt.show()
 
         if i==(scrnNo-1):
             z = scrnAlts[-1] - ht_final
@@ -1128,6 +1270,42 @@ def physical_correction_propagation(
 
         # Do ASP for last layer to next
         EFieldBuf[:] = fixedScale_angularSpectrum_FFTW(EFieldBuf,z,Q2,FWFFT,BWFFT)
+    
+    if plot == True:
+    
+        A = EFieldBuf.shape[-1]
+        B = 159#self.plot_mask.shape[0]
+        
+        mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                    (A-B)//2:(A+B)//2])/np.sum(output_mask)
+        
+        prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                                    (A-B)//2:(A+B)//2]
+                                    /mean_phase)
+        
+        prop_dm_intensity = np.abs((EFieldBuf)[(A-B)//2:(A+B)//2,
+                                            (A-B)//2:(A+B)//2])**2
+    
+        mean_intensity = numpy.nanmean(prop_dm_intensity[np.asarray(output_mask[(A-B)//2:(A+B)//2,
+                                            (A-B)//2:(A+B)//2],dtype=bool)])
+        
+        P = EFieldBuf[output_mask == True]
+        Q = output_mask[output_mask == True]
+        
+        strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+                            / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+                            / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+        rytov = numpy.var(numpy.log(numpy.abs(P[np.asarray(Q,dtype=bool)])))
+        
+        plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
+        plt.title('phase after corrections: Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
+        plt.colorbar()
+        plt.show()
+        plt.imshow(prop_dm_intensity/mean_intensity)#,vmin=0,vmax=3)
+        plt.title('intensity after corrections: Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
+        plt.colorbar()
+        plt.show()
+        
     if output_mask is not None:
         EFieldBuf *= output_mask
     

@@ -1,0 +1,93 @@
+simName: sh_8x8_PHY_DM_through_aber
+pupilSize: 128
+nGS: 1
+nDM: 3
+nSci: 1
+nIters: 10
+loopTime: 0.001
+threads: 4
+
+verbosity: 0
+
+saveCalib: True
+saveSlopes: True
+saveDmCommands: True
+
+saveSciRes: False
+saveWfsFrames: False
+
+saveInstScieField: False
+
+saveSciPsf: True
+saveInstPsf: True
+saveStrehl: True
+saveWfe: False
+
+saveLgsPsf: False
+
+Atmosphere:
+  scrnNo: 1
+  scrnHeights: [0]
+  scrnStrengths: [1]
+  windDirs: [0]
+  windSpeeds: [0,0]
+  r0: 0.05
+  L0: [4]
+  infinite: True
+
+
+Telescope:
+  telDiam: 0.4
+  obsDiam: 0.0
+  mask: circle
+
+WFS:
+  0:
+    type: ShackHartmann
+    GSPosition: [0, 0]
+    GSHeight: 0
+    GSMag: 3
+    nxSubaps: 8
+    pxlsPerSubap: 20
+    subapFOV: 21
+    wavelength: 500e-9
+    propagationMode: Physical
+    subapThreshold: 0.9
+
+DM:
+  0:
+    type: TT
+    closed: True
+    iMatValue: 1
+    gain: 0.5
+    altitude: 0
+  1:
+    type: FastPiezo
+    closed: True
+    iMatValue: 500
+    gain: 0.5
+    altitude: 0
+  2:
+    type: Aberration
+    subtype: OneZernike
+    r0: 0.1
+    L0: 4
+    iMatValue: 1
+    nollMode: 2
+    altitude: 5000
+    calibrate: True
+    closed: True
+
+Reconstructor:
+  type: MVM
+  svdConditioning: 0.01
+  gain: 0.5
+
+Science:
+  0:
+    position: [0, 0]
+    FOV: 20
+    wavelength: 500e-9
+    pxls: 200
+    propagationMode: Physical
+

@@ -28,12 +28,12 @@ DM:
     type: FastPiezo
   2:
     L0: 8.0
-    altitude: 5000
+    altitude: 6333.0
     calibrate: true
     closed: true
     iMatValue: 1
-    nollMode: 45
-    r0: 0.04276341
+    nollMode: 91
+    r0: 0.054
     subtype: Atmosphere_perfect_DM
     type: Aberration
 Reconstructor:
@@ -43,15 +43,15 @@ Reconstructor:
 Science:
   0:
     FOV: 20
+    fftOversamp: 2
+    fftwFlag: FFTW_MEASURE
+    fftwThreads: 2
     position:
     - 0
     - 0
     propagationMode: Physical
     pxls: 200
     wavelength: 500e-9
-    fftOversamp: 2
-    fftwThreads: 2
-    fftwFlag: FFTW_MEASURE
 Telescope:
   mask: circle
   obsDiam: 0.0
@@ -64,6 +64,8 @@ WFS:
     - 0
     - 0
     fftOversamp: 1
+    fftwFlag: FFTW_MEASURE
+    fftwThreads: 2
     nxSubaps: 8
     propagationMode: Physical
     pxlsPerSubap: 20
@@ -71,12 +73,10 @@ WFS:
     subapThreshold: 0.9
     type: ShackHartmann
     wavelength: 500e-9
-    fftwThreads: 2
-    fftwFlag: FFTW_MEASURE
 loopTime: 0.001
 nDM: 3
 nGS: 1
-nIters: 20
+nIters: 10
 nSci: 1
 pupilSize: 128
 saveCalib: true
@@ -85,11 +85,11 @@ saveInstPsf: false
 saveInstScieField: false
 saveLgsPsf: false
 saveSciPsf: false
-saveSciRes: true
+saveSciRes: false
 saveSlopes: true
 saveStrehl: true
 saveWfe: true
 saveWfsFrames: false
-simName: bad_IM
+simName: bad_IM-rytov31-AS51%
 threads: 4
 verbosity: 0

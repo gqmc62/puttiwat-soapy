@@ -18,13 +18,13 @@ DM:
     altitude: 0
     closed: true
     gain: 0.5
-    iMatValue: 1
+    iMatValue: 0.002
     type: TT
   1:
     altitude: 0
     closed: true
     gain: 0.5
-    iMatValue: 500
+    iMatValue: 1
     type: FastPiezo
   2:
     L0: 8.0
@@ -32,8 +32,8 @@ DM:
     calibrate: true
     closed: true
     iMatValue: 1
-    nollMode: 105
-    r0: 0.08
+    nollMode: 45
+    r0: 0.04276341
     subtype: Zernike
     type: Aberration
 Reconstructor:
@@ -60,6 +60,7 @@ WFS:
     GSPosition:
     - 0
     - 0
+    fftOversamp: 1
     nxSubaps: 8
     propagationMode: Physical
     pxlsPerSubap: 20

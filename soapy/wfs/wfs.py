@@ -157,7 +157,7 @@ class WFS(object):
         self.initFFTs()
         if self.lgsConfig and self.config.lgs:
             self.initLGS()
-
+        # print('i am wfs')
         self.allocDataArrays()
 
         self.calcTiltCorrect()
@@ -192,6 +192,7 @@ class WFS(object):
         pass
 
     def allocDataArrays(self):
+        self.los.allocDataArrays()
         pass
 
     def initLos(self):
@@ -380,7 +381,8 @@ class WFS(object):
             logger.debug('Elong layer: {}'.format(i))
 
             # Add uncorrected phase for plotting
-            self.uncorrectedPhase += self.los[i].phase/self.los[i].phs2Rad
+            # self.uncorrectedPhase += self.los[i].phase/self.los[i].phs2Rad
+            self.uncorrectedPhase += self.los[i].uncorrectedPhase
 
             # Add the effect of the defocus and possibly tilt
             self.los[i].EField *= numpy.exp(1j*self.elongPhaseAdditions[i])
@@ -424,23 +426,25 @@ class WFS(object):
 
         self.zeroData(detector=read, FP=False)
 
-        self.los.frame(scrns)
-
         # If LGS elongation simulated
-        if self.config.lgs and self.elong!=0:
-            self.makeElongationFrame(phase_correction)
-
-        # If no elongation
-        else:
-
-            self.uncorrectedPhase = self.los.phase.copy()/self.los.phs2Rad
-            if phase_correction is not None:
-                self.los.performCorrection(phase_correction)
-                
-                if self.config.lgs and self.config.lgs.precompensated:
+        if self.config.lgs:
+	    # If no elongation
+            if self.elong!=0:
+                self.los.frame(scrns=scrns)
+                self.makeElongationFrame(phase_correction)
+            else:
+                self.los.frame(scrns=scrns,correction=phase_correction)
+                self.uncorrectedPhase = self.los.uncorrectedPhase
+                if self.config.lgs.precompensated:
                     self.lgs.precorrection = phase_correction
+                self.calcFocalPlane()
 
+  
+        else:
+            self.los.frame(scrns=scrns,correction=phase_correction)
+            self.uncorrectedPhase = self.los.uncorrectedPhase
             self.calcFocalPlane()
+
 
         self.integrateDetectorPlane()
         

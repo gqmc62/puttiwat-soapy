@@ -80,7 +80,8 @@ class LineOfSight(object):
             self, config, soapyConfig,
             propagation_direction="down", out_pixel_scale=None,
             nx_out_pixels=None, mask=None, metaPupilPos=None):
-
+        # self.count_allocateDataTime = 0
+        # self.count_calcInitParam = 0
         self.config = config
         self.soapy_config = soapyConfig
         self.pupil_size = self.soapy_config.sim.pupilSize
@@ -113,18 +114,26 @@ class LineOfSight(object):
         self.atmosConfig = soapyConfig.atmos
 
         self.mask = mask
-
+        # if (self.config.type == 'PSF'):
+        #     print(out_pixel_scale)
         self.calcInitParams(out_pixel_scale, nx_out_pixels)
-
-        self.allocDataArrays()
+        # if (self.config.type == 'PSF'):
+        #     print(self.out_pixel_scale)
+        # print('i am los')
+        # self.allocDataArrays()
 
         # Can be set to use other values as metapupil position
         self.metaPupilPos = metaPupilPos
         
+        # dont delete this
+        # it means if propagation less than this distance
+        # its effect is mostly mathematical error!!!
+        # and should change pixel scale or something...
         zmax = numpy.max(numpy.concatenate([
             self.layer_altitudes,self.dm_altitudes,[0]]))
         if 2*self.out_pixel_scale > 2*numpy.sqrt(self.wavelength*zmax):
-            self.config.propagationMode = 'Geometric'
+            print('this propagation should be geometric!!')
+            #self.config.propagationMode = 'Geometric'
             
         
 
@@ -174,6 +183,10 @@ class LineOfSight(object):
             outPxlScale (float): Pixel scale of required phase/EField (metres/pxl)
             nOutPxls (int): Size of output array in pixels
         """
+        # self.count_calcInitParam += 1
+        # print(self.count_calcInitParam)
+        # if (self.config.type == 'PSF'):
+        #     print(out_pixel_scale)
         logger.debug("Calculate LOS Init PArams!")
         # Convert phase deviation to radians at wfs wavelength.
         # (currently in nm remember...?)
@@ -186,7 +199,8 @@ class LineOfSight(object):
             self.out_pixel_scale = self.phase_pixel_scale
         else:
             self.out_pixel_scale = out_pixel_scale
-            
+        # if (self.config.type == 'PSF'):
+        #     print(self.out_pixel_scale)
         # try:
         #     self.fov = self.config.subapFOV * 2*np.pi/360./3600.
         # except:
@@ -197,6 +211,7 @@ class LineOfSight(object):
             
         if nx_out_pixels is None:
             self.nx_out_pixels = self.simConfig.simSize
+            self.nx_in_pixels = self.nx_out_pixels
         else:
             self.nx_out_pixels = nx_out_pixels
             self.nx_in_pixels = nx_out_pixels
@@ -300,7 +315,7 @@ class LineOfSight(object):
             # pupil, ( fov + 2*diffraction_per_side )scaled to max height
             # and the largest angular-spectrum in OTF = wvl*z/delta**2
             
-            
+            self.nx_prop_pixels = 2**int(numpy.ceil(numpy.log(self.nx_prop_pixels)/numpy.log(2)))
             
             self.low_buf = (self.nx_prop_pixels - self.nx_out_pixels)//2
             self.high_buf = (self.nx_prop_pixels + self.nx_out_pixels)//2
@@ -317,35 +332,7 @@ class LineOfSight(object):
             
             
             
-            N = self.nx_prop_pixels #Assumes Uin is square.
-            k = 2*numpy.pi/self.wavelength     #optical wavevector
-            
-            df1 = 1. / (N*self.in_pixel_scale)
-            fX,fY = numpy.meshgrid(df1*numpy.arange(-N/2,N/2),
-                                   df1*numpy.arange(-N/2,N/2))
-            fsq = fX**2 + fY**2
-            
-            self.partialmade_Q2 = numpy.fft.ifftshift(numpy.exp(-1j * numpy.pi**2 * 2 /k*fsq))
-            
-            self.input_forward_FFT = pyfftw.empty_aligned(
-                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
-            self.output_forward_FFT = pyfftw.empty_aligned(
-                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
-            self.forward_FFT = pyfftw.FFTW(
-                    self.input_forward_FFT, self.output_forward_FFT, axes=(-2, -1),
-                    threads=self.config.fftwThreads, flags=(self.config.fftwFlag, "FFTW_DESTROY_INPUT"),
-                    direction='FFTW_FORWARD'
-                    )
-            
-            self.input_backward_FFT = pyfftw.empty_aligned(
-                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
-            self.output_backward_FFT = pyfftw.empty_aligned(
-                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
-            self.backward_FFT = pyfftw.FFTW(
-                    self.input_backward_FFT, self.output_backward_FFT, axes=(-2, -1),
-                    threads=self.config.fftwThreads, flags=(self.config.fftwFlag, "FFTW_DESTROY_INPUT"),
-                    direction='FFTW_BACKWARD'
-                    )
+
             
             
         else:
@@ -355,62 +342,8 @@ class LineOfSight(object):
             self.forward_FFT = None
             self.backward_FFT = None
             
-        temp2 = int(numpy.floor(self.nx_out_pixels*self.pupil_size/self.sim_size))
-        temp1 = temp2//2
-            
-        self.plot_mask = aotools.circle(temp1,temp2)
-            
-        if self.mask is not None:
-            self.outMask = interp.zoom_rbs (
-                    self.mask, self.nx_out_pixels, order=1)#.round()
-        else:
-            self.outMask = interp.zoom(
-                    self.mask, self.nx_out_pixels)#.round()
-        
-        if self.config.propagationMode == 'Physical':
-            self.prop_mask = numpy.zeros((self.nx_prop_pixels,self.nx_prop_pixels))
-            self.nprop2nout = (self.nx_prop_pixels - self.nx_out_pixels)//2
-            if self.nprop2nout == 0:
-                self.prop_mask = self.outMask
-            else:
-                if self.nprop2nout > 0:
-                    self.prop_mask[self.nprop2nout:-self.nprop2nout,self.nprop2nout:-self.nprop2nout] = self.outMask
-
-        self.output_phase_diameter = self.nx_out_pixels * self.out_pixel_scale
         
 
-        # Calculate coords of phase at each altitude
-        self.layer_metapupil_coords = numpy.zeros((self.n_layers, 2, self.nx_in_pixels))
-        for i in range(self.n_layers):
-            x1, x2, y1, y2 = self.calculate_altitude_coords(self.layer_altitudes[i])
-            self.layer_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
-            self.layer_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
-
-        # ensure coordinates aren't out of bounds for interpolation
-        self.layer_metapupil_coords = self.layer_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
-
-        # Calculate coords of phase at each DM altitude
-        self.dm_metapupil_coords = numpy.zeros((self.n_dm, 2, self.nx_in_pixels))
-        for i in range(self.n_dm):
-            x1, x2, y1, y2 = self.calculate_altitude_coords(self.dm_altitudes[i])
-            self.dm_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
-            self.dm_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
-        self.dm_metapupil_coords = self.dm_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
-
-        self.radii = None
-        
-        # Relavent phase  centred on the line of sight direction
-        self.phase_screens = numpy.zeros((self.n_layers, self.nx_in_pixels, self.nx_in_pixels))
-        # Buffer for corection across fulll FOV
-        self.correction_screens = numpy.zeros((self.n_dm, self.nx_in_pixels, self.nx_in_pixels))
-        # Relavent correction centred on the line of sight direction
-        self.phase_correction = numpy.zeros((self.nx_in_pixels, self.nx_in_pixels))
-        if self.config.propagationMode == 'Physical':
-            self.phase_screens_buf = numpy.zeros((self.n_layers, self.nx_prop_pixels, self.nx_prop_pixels))
-            self.correction_screens_buf = numpy.zeros((self.n_dm, self.nx_prop_pixels, self.nx_prop_pixels))
-            self.phase_correction_buf = numpy.zeros((self.nx_prop_pixels, self.nx_prop_pixels))
-            self.allocDataArrays()
-        
 
     def calculate_altitude_coords(self, layer_altitude):
         """
@@ -462,6 +395,7 @@ class LineOfSight(object):
         keep it fast. This includes arrays for phase
         and the E-Field across the LOS
         """
+        # self.count_allocateDataTime += 1
         self.phase = numpy.zeros([self.nx_out_pixels] * 2, dtype=DTYPE)
         self.EField = numpy.ones([self.nx_out_pixels] * 2, dtype=CDTYPE)
         self.residual = numpy.zeros([self.nx_out_pixels] * 2, dtype=DTYPE)
@@ -469,8 +403,91 @@ class LineOfSight(object):
         self.residual_EField = numpy.copy(self.EField)
         
         if self.config.propagationMode == 'Physical':
+            N = self.nx_prop_pixels #Assumes Uin is square.
+            k = 2*numpy.pi/self.wavelength     #optical wavevector
+            
+            df1 = 1. / (N*self.in_pixel_scale)
+            fX,fY = numpy.meshgrid(df1*numpy.arange(-N/2,N/2),
+                                   df1*numpy.arange(-N/2,N/2))
+            fsq = fX**2 + fY**2
+            
+            self.partialmade_Q2 = numpy.fft.ifftshift(numpy.exp(-1j * numpy.pi**2 * 2 /k*fsq))
+            
+            self.input_forward_FFT = pyfftw.empty_aligned(
+                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
+            self.output_forward_FFT = pyfftw.empty_aligned(
+                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
+            self.forward_FFT = pyfftw.FFTW(
+                    self.input_forward_FFT, self.output_forward_FFT, axes=(-2, -1),
+                    threads=self.config.fftwThreads, flags=(self.config.fftwFlag, "FFTW_DESTROY_INPUT"),
+                    direction='FFTW_FORWARD'
+                    )
+            
+            self.input_backward_FFT = pyfftw.empty_aligned(
+                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
+            self.output_backward_FFT = pyfftw.empty_aligned(
+                    (self.nx_prop_pixels, self.nx_prop_pixels), dtype=CDTYPE)
+            self.backward_FFT = pyfftw.FFTW(
+                    self.input_backward_FFT, self.output_backward_FFT, axes=(-2, -1),
+                    threads=self.config.fftwThreads, flags=(self.config.fftwFlag, "FFTW_DESTROY_INPUT"),
+                    direction='FFTW_BACKWARD'
+                    )
             self.EField_buf = numpy.ones([self.nx_prop_pixels] * 2, dtype=CDTYPE)
             self.correction_EField = numpy.copy(self.EField)
+            self.phase_screens_buf = numpy.zeros((self.n_layers, self.nx_prop_pixels, self.nx_prop_pixels))
+            self.correction_screens_buf = numpy.zeros((self.n_dm, self.nx_prop_pixels, self.nx_prop_pixels))
+            self.phase_correction_buf = numpy.zeros((self.nx_prop_pixels, self.nx_prop_pixels))
+        # print('I am {:}. it is my {:} visit'.format(self.config.type,self.count_allocateDataTime))
+        temp2 = int(numpy.floor(self.nx_out_pixels*self.pupil_size/self.sim_size))
+        temp1 = temp2//2
+            
+        self.plot_mask = aotools.circle(temp1,temp2)
+            
+        if self.mask is not None:
+            self.outMask = interp.zoom_rbs (
+                    self.mask, self.nx_out_pixels, order=1)#.round()
+        else:
+            self.outMask = interp.zoom(
+                    self.mask, self.nx_out_pixels)#.round()
+        
+        if self.config.propagationMode == 'Physical':
+            self.prop_mask = numpy.zeros((self.nx_prop_pixels,self.nx_prop_pixels))
+            self.nprop2nout = (self.nx_prop_pixels - self.nx_out_pixels)//2
+            if self.nprop2nout == 0:
+                self.prop_mask = self.outMask
+            else:
+                if self.nprop2nout > 0:
+                    self.prop_mask[self.nprop2nout:-self.nprop2nout,self.nprop2nout:-self.nprop2nout] = self.outMask
+
+        self.output_phase_diameter = self.nx_out_pixels * self.out_pixel_scale
+        
+
+        # Calculate coords of phase at each altitude
+        self.layer_metapupil_coords = numpy.zeros((self.n_layers, 2, self.nx_in_pixels))
+        for i in range(self.n_layers):
+            x1, x2, y1, y2 = self.calculate_altitude_coords(self.layer_altitudes[i])
+            self.layer_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
+            self.layer_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
+
+        # ensure coordinates aren't out of bounds for interpolation
+        self.layer_metapupil_coords = self.layer_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
+
+        # Calculate coords of phase at each DM altitude
+        self.dm_metapupil_coords = numpy.zeros((self.n_dm, 2, self.nx_in_pixels))
+        for i in range(self.n_dm):
+            x1, x2, y1, y2 = self.calculate_altitude_coords(self.dm_altitudes[i])
+            self.dm_metapupil_coords[i, 0] = numpy.linspace(x1, x2-1, self.nx_in_pixels)
+            self.dm_metapupil_coords[i, 1] = numpy.linspace(y1, y2-1, self.nx_in_pixels)
+        self.dm_metapupil_coords = self.dm_metapupil_coords.clip(0, self.nx_scrn_size - 1.000000001)
+
+        self.radii = None
+        
+        # Relavent phase  centred on the line of sight direction
+        self.phase_screens = numpy.zeros((self.n_layers, self.nx_in_pixels, self.nx_in_pixels))
+        # Buffer for corection across fulll FOV
+        self.correction_screens = numpy.zeros((self.n_dm, self.nx_in_pixels, self.nx_in_pixels))
+        # Relavent correction centred on the line of sight direction
+        self.phase_correction = numpy.zeros((self.nx_in_pixels, self.nx_in_pixels))
             
 
 ######################################################
@@ -726,7 +743,7 @@ class LineOfSight(object):
         #                                         self.low_buf:self.high_buf])
         #     original_state_buf = numpy.copy(self.EField_buf)
             
-        if (self.config.type == 'ShackHartmann'):
+        if (self.config.type == 'ShackHartmann') and (self.scrns is not None):
             plot = True
         else:
             plot = False
@@ -1010,9 +1027,13 @@ class LineOfSight(object):
         '''
 
         self.zeroData()
+        
+        if correction is None:
+            correction = numpy.zeros(
+                (self.n_dm, self.nx_scrn_size,self.nx_scrn_size))
 
         # If we propagate up, must do correction first!
-        if (self.propagation_direction == "up") and (correction is not None):
+        if (self.propagation_direction == "up"):
             self.performCorrection(correction)
 
         # Now do propagation through atmospheric turbulence
@@ -1020,15 +1041,27 @@ class LineOfSight(object):
             if scrns.ndim==2:
                 scrns.shape = 1, scrns.shape[0], scrns.shape[1]
             self.scrns = scrns
+            self.makePhase(self.radii)
         else: # If no scrns, just assume no turbulence
             self.scrns = numpy.zeros(
                     (self.n_layers, self.nx_scrn_size, self.nx_scrn_size))
-
-        self.makePhase(self.radii)
+            self.EField_buf = numpy.ones([self.nx_prop_pixels] * 2, dtype=CDTYPE)
+            if self.prop_mask is not None:
+                self.EField_buf[:] = np.copy(self.EField_buf[:] * self.prop_mask)
+            self.phase[:] = 0
+            self.EField = self.EField_buf[self.low_buf:self.high_buf,
+                                          self.low_buf:self.high_buf]
+        
+        self.uncorrectedPhase = self.phase.copy()/self.phs2Rad
         self.residual = self.phase
         # If propagating down, do correction last
-        if (self.propagation_direction == "down") and (correction is not None):
-            self.performCorrection(correction)
+        if (self.propagation_direction == "down"):
+            if (self.config.type == 'ShackHartmann'):
+                if self.config.lgs:
+                    if self.config.lgs.elongationDepth != 0:
+                        return self.residual
+
+        self.performCorrection(correction)
         
         return self.residual
 

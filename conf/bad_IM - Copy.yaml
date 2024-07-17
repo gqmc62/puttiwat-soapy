@@ -28,13 +28,13 @@ DM:
     type: FastPiezo
   2:
     L0: 8.0
-    altitude: 5000
+    altitude: 100.0
     calibrate: true
     closed: true
     iMatValue: 1
-    nollMode: 45
-    r0: 0.04276341
-    subtype: Atmosphere_perfect_DM
+    nollMode: 105
+    r0: 0.08
+    subtype: Atmosphere
     type: Aberration
 Reconstructor:
   gain: 0.5
@@ -49,9 +49,6 @@ Science:
     propagationMode: Physical
     pxls: 200
     wavelength: 500e-9
-    fftOversamp: 2
-    fftwThreads: 2
-    fftwFlag: FFTW_MEASURE
 Telescope:
   mask: circle
   obsDiam: 0.0
@@ -63,7 +60,6 @@ WFS:
     GSPosition:
     - 0
     - 0
-    fftOversamp: 1
     nxSubaps: 8
     propagationMode: Physical
     pxlsPerSubap: 20
@@ -71,12 +67,11 @@ WFS:
     subapThreshold: 0.9
     type: ShackHartmann
     wavelength: 500e-9
-    fftwThreads: 2
-    fftwFlag: FFTW_MEASURE
+    fftOversamp: 1
 loopTime: 0.001
 nDM: 3
 nGS: 1
-nIters: 20
+nIters: 10
 nSci: 1
 pupilSize: 128
 saveCalib: true
@@ -85,7 +80,7 @@ saveInstPsf: false
 saveInstScieField: false
 saveLgsPsf: false
 saveSciPsf: false
-saveSciRes: true
+saveSciRes: false
 saveSlopes: true
 saveStrehl: true
 saveWfe: true

@@ -76,7 +76,6 @@ class PSFCamera(object):
                 out_pixel_scale=float(self.telescope_diameter / self.pupil_size),
                 nx_out_pixels=self.sim_size
         )
-        self.los.allocDataArrays()
 
         # Init FFT object
         # propagation size for pupil to focal plane of the sci cams

@@ -625,6 +625,7 @@ class SimConfig(ConfigObj):
                                     and ``sim.instStrehl``
         ``saveWfe``                 Saves the science camera wave front error.
                                     Accessed from sim with ``sim.WFE``.
+        ``saveRytov``               Saves the variance of log-amplitude
         ``saveSciPsf``              Saves the science PSF.
         ``saveInstPsf``             Saves the instantenous science PSF.
         ``saveInstScieField``       Saves the instantaneous electric field at focal plane.
@@ -646,6 +647,7 @@ class SimConfig(ConfigObj):
                             ("reconstructor", "MVM"),
                             ("simName", None),
                             ("saveSlopes", False),
+                            ("saveAtmSlopes", False),
                             ("saveDmCommands", False),
                             ("saveLgsPsf", False),
                             ("saveLearn", False),
@@ -655,6 +657,7 @@ class SimConfig(ConfigObj):
                             ("saveInstPsf", False),
                             ("saveInstScieField", False),
                             ("saveWfe", False),
+                            ("saveRytov", False),
                             ("saveSciRes", False),
                             ("saveCalib", False),
                             ("wfsMP", False),
@@ -1202,7 +1205,8 @@ class ReconstructorConfig(ConfigObj):
             ("svdConditioning", 0.),
             ("gain", 0.6),
             ("imat_noise", True),
-            ("loadModule", None)
+            ("loadModule", None),
+            ("analyseAberationCalib", False)
                         ]
 
     calculatedParams = [

@@ -45,7 +45,13 @@ try:
     xrange
 except NameError:
     xrange = range
-    
+
+FULL_ACTS = numpy.array([21,22,23,
+                         29,30,31,32,33,
+                         38,39,40,41,42,
+                         47,48,49,50,51,
+                         57,58,59],dtype=int)
+
 def bin_this(A, w):
     # a = numpy.nanmean(A[:(A.shape[0]//w)*w,
     #       :(A.shape[1]//w)*w].reshape(
@@ -133,11 +139,11 @@ class Reconstructor(object):
         """
         filename = self.sim_config.simName+"/cMat.fits"
 
-        fits.writeto(
-                filename, self.control_matrix,
-                header=self.sim_config.saveHeader, overwrite=True)
+        # fits.writeto(
+        #         filename, self.control_matrix,
+        #         header=self.sim_config.saveHeader, overwrite=True)
 
-    def loadCMat(self):
+    def loadCMat(self,cmat_to_load=None):
         """
         Loads a control matrix from file to the reconstructor
 
@@ -152,33 +158,38 @@ class Reconstructor(object):
         cMatHDU = fits.open(filename)[0]
         cMatHDU.verify("fix")
         header = cMatHDU.header
-
-        try:
-            dmNo = int(header["NBDM"])
-            exec("dmActs = numpy.array({})".format(
-                    cMatHDU.header["DMACTS"]), globals())
-            exec("dmTypes = %s" % header["DMTYPE"], globals())
-            exec("dmConds = numpy.array({})".format(
-                    cMatHDU.header["DMCOND"]), globals())
-
-            if not numpy.allclose(dmConds, self.dmConds):
-                raise IOError("DM conditioning Parameter changed - will make new control matrix")
-            if not numpy.all(dmActs==self.dmActs) or dmTypes!=self.dmTypes or dmNo!=dmNo:
-                logger.warning("loaded control matrix may not be compatibile with \
-                                the current simulation. Will try anyway....")
-
-            cMat = cMatHDU.data
-
-        except KeyError:
-            logger.warning("loaded control matrix header has not created by this ao sim. Will load anyway.....")
-            #cMat = cMatFile[1]
-            cMat = cMatHDU.data
-
-        if cMat.shape != self.controlShape:
-            logger.warning("designated control matrix does not match the expected shape")
-            raise IOError
-        else:
-            self.control_matrix = cMat
+        
+        if cmat_to_load is None:
+        
+            try:
+                dmNo = int(header["NBDM"])
+                exec("dmActs = numpy.array({})".format(
+                        cMatHDU.header["DMACTS"]), globals())
+                exec("dmTypes = %s" % header["DMTYPE"], globals())
+                exec("dmConds = numpy.array({})".format(
+                        cMatHDU.header["DMCOND"]), globals())
+    
+                if not numpy.allclose(dmConds, self.dmConds):
+                    raise IOError("DM conditioning Parameter changed - will make new control matrix")
+                if not numpy.all(dmActs==self.dmActs) or dmTypes!=self.dmTypes or dmNo!=dmNo:
+                    logger.warning("loaded control matrix may not be compatibile with \
+                                    the current simulation. Will try anyway....")
+    
+                cMat = cMatHDU.data
+    
+            except KeyError:
+                logger.warning("loaded control matrix header has not created by this ao sim. Will load anyway.....")
+                #cMat = cMatFile[1]
+                cMat = cMatHDU.data
+    
+            if cMat.shape != self.controlShape:
+                logger.warning("designated control matrix does not match the expected shape")
+                raise IOError
+            else:
+                self.control_matrix = cMat
+                
+        elif cmat_to_load is not None:
+            self.control_matrix = cmat_to_load
 
     def save_interaction_matrix(self):
         """
@@ -209,7 +220,7 @@ class Reconstructor(object):
             except AttributeError:
                 pass
                 
-    def load_interaction_matrix(self):
+    def load_interaction_matrix(self,imat_to_load=None):
         """
         Loads the interaction matrix from file
 
@@ -219,49 +230,59 @@ class Reconstructor(object):
         of actuators which are "valid". Some DMs also use pre made influence functions, which are
         also loaded here.
         """
-
-        filename = self.sim_config.simName+"/iMat.fits"
-
-        imat_header = fits.getheader(filename)
-        imat_data = fits.getdata(filename)
-
-        imat_totalActs = imat_header['DMNACTU']
-        imat_totalWfsData = imat_header['NSLOP']
         
-        # Check iMat generated with same totalActs and totalWfsData as current sim
-        # NOTE the actual shape of the loaded iMat can be different due to invalid acts
-        if imat_totalActs != self.sim_config.totalActs or imat_totalWfsData != self.sim_config.totalWfsData:
-            logger.warning(
-                "interaction matrix not generated with same number of actuators/wfs slopes"
-            )
-            raise IOError("interaction matrix does not match required required size.")
-
-        # Load valid actuators
-        n_total_valid_acts = 0
-        for i in range(self.n_dms):
-            valid_acts_filename =  self.sim_config.simName+"/active_acts_dm{}.fits".format(i)
-            valid_acts = fits.getdata(valid_acts_filename)
-            self.dms[i].valid_actuators = valid_acts
-            n_total_valid_acts += self.dms[i].n_valid_actuators
-
-            # DM may also have preloaded influence functions
-            try:
-                dm_shapes_filename = self.sim_config.simName + "/dmShapes_dm{}.fits".format(i)
-                dm_shapes = fits.getdata(dm_shapes_filename)
-                self.dms[i].iMatShapes = dm_shapes
-
-            except IOError:
-                # Found no DM influence funcs
-                logger.info("DM Influence functions not found. If the DM doesn't use them, this is ok. If not, set 'forceNew=True' when making IMat")
-
-        # Final check of loaded iMat
-        if imat_data.shape != (n_total_valid_acts, self.sim_config.totalWfsData):
-            logger.warning(
-                "interaction matrix does not match required required size."
-            )
-            raise IOError("interaction matrix does not match required required size.")
-
-        self.interaction_matrix = imat_data
+        if imat_to_load is None:
+        
+            filename = self.sim_config.simName+"/iMat.fits"
+    
+            imat_header = fits.getheader(filename)
+            imat_data = fits.getdata(filename)
+    
+            imat_totalActs = imat_header['DMNACTU']
+            imat_totalWfsData = imat_header['NSLOP']
+            
+            # Check iMat generated with same totalActs and totalWfsData as current sim
+            # NOTE the actual shape of the loaded iMat can be different due to invalid acts
+            if imat_totalActs != self.sim_config.totalActs or imat_totalWfsData != self.sim_config.totalWfsData:
+                logger.warning(
+                    "interaction matrix not generated with same number of actuators/wfs slopes"
+                )
+                raise IOError("interaction matrix does not match required required size.")
+    
+            # Load valid actuators
+            n_total_valid_acts = 0
+            for i in range(self.n_dms):
+                valid_acts_filename =  self.sim_config.simName+"/active_acts_dm{}.fits".format(i)
+                valid_acts = fits.getdata(valid_acts_filename)
+                self.dms[i].valid_actuators = valid_acts
+                n_total_valid_acts += self.dms[i].n_valid_actuators
+    
+                # DM may also have preloaded influence functions
+                try:
+                    dm_shapes_filename = self.sim_config.simName + "/dmShapes_dm{}.fits".format(i)
+                    dm_shapes = fits.getdata(dm_shapes_filename)
+                    self.dms[i].iMatShapes = dm_shapes
+    
+                except IOError:
+                    # Found no DM influence funcs
+                    logger.info("DM Influence functions not found. If the DM doesn't use them, this is ok. If not, set 'forceNew=True' when making IMat")
+    
+            # Final check of loaded iMat
+            if imat_data.shape != (n_total_valid_acts, self.sim_config.totalWfsData):
+                logger.warning(
+                    "interaction matrix does not match required required size."
+                )
+                raise IOError("interaction matrix does not match required required size.")
+    
+            self.interaction_matrix = imat_data
+            
+        elif imat_to_load is not None:
+            imat_data = imat_to_load
+            imat_totalActs = imat_data.shape[0]
+            imat_totalWfsData = imat_data.shape[1]
+            
+            self.dms[i].valid_actuators = numpy.ones((self.dms[i].n_acts), dtype="int")
+            self.interaction_matrix = imat_data
 
     def makeIMat(self, callback=None):
 
@@ -337,20 +358,31 @@ class Reconstructor(object):
                 wfs.config.eReadNoise = 0
             
             zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = (
-                    wfs.frame(None, phase_correction=phase, iMatFrame=True))# / dm.dmConfig.iMatValue
-        
-            zero_wfs_efield.append(numpy.copy(wfs.interp_efield))
-        
+                    wfs.frame(None, phase_correction=phase, iMatFrame=True))# / dm.dmConfig.iMatValue            
+            if self.soapy_config.recon.analyseAberationCalib:
+                zero_wfs_efield.append(numpy.copy(wfs.interp_efield))
+                # plt.imshow(numpy.angle(zero_wfs_efield[wfs_n]))
+                # plt.show()
+                # plt.imshow(numpy.abs(zero_wfs_efield[wfs_n])**2)
+                # plt.show()
+            
+        # plt.imshow(phase.sum(0))
+        # plt.show()
         # plt.plot(zero_iMat)
         # plt.show()
         
-        self.zero_iMat = zero_iMat
+        self.zero_iMat = numpy.copy(zero_iMat)
         
         # poke each dms
         
-        setattr(dm,'subapShift', numpy.zeros((dm.n_acts,len(self.wfss),2)))
-        dm.subapShift[:] = numpy.nan
-        setattr(dm,'rytov', numpy.zeros((dm.n_acts,len(self.wfss))))
+        if self.soapy_config.recon.analyseAberationCalib:
+        
+            setattr(dm,'subapShift', numpy.zeros((dm.n_acts,len(self.wfss),2)))
+            dm.subapShift[:] = numpy.nan
+            # setattr(dm,'subapShiftv2', numpy.zeros((dm.n_acts,len(self.wfss),2)))
+            # dm.subapShiftv2[:] = numpy.nan
+            setattr(dm,'rytov', numpy.zeros((dm.n_acts,len(self.wfss))))
+            dm.rytov[:] = numpy.nan
         
         for i in range(dm.n_acts):
             # Set vector of iMat commands and phase to 0
@@ -378,376 +410,212 @@ class Reconstructor(object):
                     wfs_rnoise = wfs.config.eReadNoise
                     wfs.config.eReadNoise = 0
                 
-                plot = False
-                if (plot == True) and (i == 40):
-                #     plt.imshow(phase.sum(0))
-                #     plt.title('all geom dm')
-                #     plt.colorbar()
-                #     plt.show()
-                    actCommands = numpy.zeros((81),dtype=float)
-                    actCommands[20] = 1
-                    actCommands[22] = 1
-                    actCommands[24] = 1
-                    actCommands[38] = 1
-                    actCommands[40] = 1
-                    actCommands[42] = 1
-                    actCommands[56] = 1
-                    actCommands[58] = 1
-                    actCommands[60] = 1
-                    phase[dm.n_dm] = dm.dmFrame(actCommands)
-                    wfs.frame(None, phase_correction=phase, iMatFrame=True)
-                    
-                    xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
-                    xx -= xx.max()/2.
-                    xx /= wfs.nx_subap_interp
-                    
-                    zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
-                    
-                    
-                    wfs_size = wfs.interp_efield.shape[0]
-                    
-                    A = phase.shape[1]
-                    B = self.soapy_config.sim.pupilSize
-                    P = (A - B)//2
-                    Q = (A + B)//2
-                    
-                    no_aberration_efield = (numpy.exp(1j*interp.zoom(phase[:-1,P:Q,P:Q].sum(0),wfs_size)/500.*2*numpy.pi))
-                    
-                    wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
-                    
-                    with_aberration_efield = (wfs.interp_efield
-                                            / numpy.asarray(zero_wfs_efield[wfs_n]))
-                    
-                    to_plot = numpy.angle(with_aberration_efield)
-                    to_plot -= numpy.nanmedian(to_plot)
-                    fig, ax1 = plt.subplots()
-                    
-                    c = ax1.pcolor(xx,xx,
-                                -to_plot,vmin=0,vmax=0.012)
-                    
-                    ax1.hlines((-4,-3,-2,-1,0,1,2,3,4),xmin=-4,xmax=4,color='w')
-                    ax1.vlines((-4,-3,-2,-1,0,1,2,3,4),ymin=-4,ymax=4,color='w')
-                    ax1.plot([0,2,-2,0,0,-2,-2,2,2],[0,0,0,2,-2,-2,2,-2,2],color='k',marker='o',ls='')
-                    fig.colorbar(c,ax=ax1)
-                    ax1.axis('square')
-                    
-                    frame1 = ax1
-                    for xlabel_i in frame1.axes.get_xticklabels():
-                        xlabel_i.set_visible(False)
-                        xlabel_i.set_fontsize(0.0)
-                    for xlabel_i in frame1.axes.get_yticklabels():
-                        xlabel_i.set_fontsize(0.0)
-                        xlabel_i.set_visible(False)
-                        
-                    ax1.tick_params(axis='both', which='both', length=0)
-                    
-                    plt.gcf().set_size_inches(6,6)
-                    
-                    plt.savefig('dm_influence-' + time.strftime("%Y-%m-%d-%H-%M-%S") + '.png',
-                                dpi=300,bbox_inches='tight',transparent=True)
+                plot = self.soapy_config.wfss[0].plot
                 
-                    plt.show()
+                
                     
-                    actCommands[:] = 0
-
-                    # Except the one we want to make an iMat for!
-                    actCommands[i] = 1 # dm.dmConfig.iMatValue
-                    phase[dm.n_dm] = dm.dmFrame(actCommands)
                 
                 iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = -1 * (
                     wfs.frame(scrns=None, phase_correction=phase, iMatFrame=True)
                     - zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements])# / dm.dmConfig.iMatValue
-                # # plt.plot(wfs.frame(None, phase_correction=phase, iMatFrame=True),label='wfs measurement')
-                # # plt.plot(zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements],label='zero')
-                # # plt.plot(iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements],label='IM')
-                # # plt.legend()
-                # # plt.show()
                 
-                # # if i == 40:
-                # #     plt.imshow(phase.sum(0))
-                # #     plt.title('all geom dm')
-                # #     plt.colorbar()
-                # #     plt.show()
-                
-                # xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
-                # xx -= xx.max()/2.
-                # xx /= wfs.nx_subap_interp
-                
-                # zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
-                
-                # # plt.pcolor(xx,xx,numpy.angle(numpy.asarray(zero_wfs_efield[wfs_n])).T)
-                # # plt.axis('square')
-                # # plt.title('0 phase')
-                # # plt.colorbar()
-                # # plt.show()
-                
-                # # hdu = fits.PrimaryHDU([numpy.exp(1j*phase[:-1,129:257,129:257].sum(0)/500.*2*3.14).real,
-                # #                       numpy.exp(1j*phase[:-1,129:257,129:257].sum(0)/500.*2*3.14).imag])
-                # # hdul = fits.HDUList([hdu])
-                # # hdul.writeto('poke{:d}.fits'.format(i),overwrite=True)
-                # # # hdu.close()
-                
-                # wfs_size = wfs.interp_efield.shape[0]
-                
-                # A = phase.shape[1]
-                # B = self.soapy_config.sim.pupilSize
-                # P = (A - B)//2
-                # Q = (A + B)//2
-                
-                # no_aberration_efield = (numpy.exp(1j*interp.zoom(phase[:-1,P:Q,P:Q].sum(0),wfs_size)/500.*2*numpy.pi))
-                # min_phase = -0.012#(-numpy.angle(no_aberration_efield)).min()
-                # max_phase = 0#(-numpy.angle(no_aberration_efield)).max()
-                # # no_aberration_efield /= numpy.nanmean(no_aberration_efield)
-                # # no_aberration_efield /= numpy.sqrt(numpy.nanmean(numpy.abs(no_aberration_efield)**2))
-                # no_aberration = numpy.angle(no_aberration_efield)
-                # # print(no_aberration_efield[80,80])
-                # no_aberration[wfs.scaledMask == 0] = numpy.nan
-                
-                
-                
-                # # temp1 = interp.zoom(phase[-1,P:Q,P:Q],wfs_size)
-                # # temp1[wfs.scaledMask == 0] = numpy.nan
-                
-                # # plt.pcolor(xx,xx,numpy.angle(numpy.exp(1j*temp1/500.*2*3.14)).T)
-                # # plt.title('aberration at altitude')
-                # # plt.axis('square')
-                # # plt.colorbar()
-                # # plt.show()
-                
-                # wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
-                
-                # # plt.pcolor(xx,xx,numpy.angle(wfs.interp_efield.T))
-                # # plt.axis('square')
-                # # plt.title('actual poke phase')
-                # # plt.colorbar()
-                # # plt.show()
-                
-                # # hdu = fits.PrimaryHDU([(interp.zoom(wfs.interp_efield,128)
-                # #                        / numpy.asarray(zero_wfs_efield[wfs_n])).real,
-                # #                        (interp.zoom(wfs.interp_efield,128)
-                # #                                               / numpy.asarray(zero_wfs_efield[wfs_n])).imag])
-                # # hdul = fits.HDUList([hdu])
-                # # hdul.writeto('im{:d}.fits'.format(i),overwrite=True)
-                # # # hdu.close()
-                
-                # with_aberration_efield = (wfs.interp_efield
-                #                        / numpy.asarray(zero_wfs_efield[wfs_n]))
-                
-                # # if i == 40:
-                # #     to_plot = numpy.angle(with_aberration_efield)
-                # #     to_plot -= numpy.nanmedian(to_plot)
-                # #     N = with_aberration_efield.shape[0]
-                # #     fig, ax1 = plt.subplots()
+                if self.soapy_config.recon.analyseAberationCalib and DM.config.calibrate == True:
                     
-                # #     c = ax1.pcolor(numpy.arange(N),
-                # #                numpy.arange(N),
-                # #                to_plot,vmax=0,vmin=-0.012)
-                # #     ax1.plot([N/2 - 0.5],[N/2 - 0.5],color='r',marker='o')
-                # #     fig.colorbar(c,ax=ax1)
-                # #     ax1.axis('square')
-                    
-                # #     frame1 = ax1
-                # #     for xlabel_i in frame1.axes.get_xticklabels():
-                # #         xlabel_i.set_visible(False)
-                # #         xlabel_i.set_fontsize(0.0)
-                # #     for xlabel_i in frame1.axes.get_yticklabels():
-                # #         xlabel_i.set_fontsize(0.0)
-                # #         xlabel_i.set_visible(False)
+                    if (i == FULL_ACTS).any():
                         
-                # #     ax1.tick_params(axis='both', which='both', length=0)
-                    
-                # #     plt.gcf().set_size_inches(6,6)
-                    
-                # #     plt.savefig('dm_influence-' + time.strftime("%Y-%m-%d-%H-%M-%S") + '.png',
-                # #                 dpi=300,bbox_inches='tight',transparent=True)
-                
-                # #     plt.show()
-                
-                # # print(numpy.nanmean(with_aberration_efield))
-                # # with_aberration_efield /= numpy.nanmean(with_aberration_efield)
-                # # plt.imshow(numpy.angle(with_aberration_efield))
-                # # plt.show()
-                # # # print(numpy.sqrt(numpy.nanmean(numpy.abs(with_aberration_efield)**2)))
-                # # with_aberration_efield /= numpy.sqrt(numpy.nanmean(numpy.abs(with_aberration_efield)**2))
-                # with_aberration = numpy.angle(with_aberration_efield)
-                # # print(with_aberration_efield[80,80])
-                # with_aberration[wfs.scaledMask == 0] = numpy.nan
-
-                
-                # # U1 = wfs.scaledMask
-                # # U2 = wfs.interp_efield*wfs.scaledMask
-                
-                # wfs.interp_efield /= numpy.nanmean(numpy.abs(wfs.interp_efield)**2)**0.5
-                
-                # dm.rytov[i,wfs_n] = numpy.nanvar(numpy.log(numpy.abs(
-                #     wfs.interp_efield[
-                #         numpy.asarray(wfs.scaledMask,dtype=bool)])))
-                
-                
-                # # corr = (convolve2d(numpy.nan_to_num(with_aberration),
-                # #                    numpy.nan_to_num(no_aberration)))
-                
-                # size_A = with_aberration.shape[0]
-                
-                # corr = numpy.fft.fftshift(numpy.fft.ifft2(
-                #     numpy.fft.fft2(numpy.pad(
-                #         numpy.nan_to_num(with_aberration),
-                #         ((size_A//2,size_A//2),(size_A//2,size_A//2)),mode='constant'))
-                #     * numpy.conjugate(numpy.fft.fft2(numpy.pad(
-                #         numpy.nan_to_num(-no_aberration),
-                #         ((size_A//2,size_A//2),(size_A//2,size_A//2)),mode='constant')))
-                #     )).real[size_A//2:size_A*3//2,size_A//2:size_A*3//2]
-                
-                # corr[wfs.scaledMask == 0] = numpy.nan
-                
-                # SNR = (numpy.nanmax(corr) - numpy.nanmin(corr))/numpy.nanstd(corr)
-                
-                # # if numpy.nanmax(corr) < numpy.abs(numpy.nanmin(corr)):
-                # #     corr *= -1
-                # # print(corr.shape,with_aberration.shape,no_aberration.shape)
-                
-                # if SNR >= 5.:
-                    
-                #     # MAX = numpy.nanmax(-no_aberration)
-                #     # MIN = numpy.nanmin(-no_aberration)
-                    
-                #     # plt.pcolor(xx,xx,-no_aberration.T,vmin=MIN,vmax=MAX)
-                #     # plt.axis('square')
-                #     # plt.title('original poke phase')
-                #     # plt.colorbar()
-                #     # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-                #     # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-                #     # # plt.savefig('poke{:d}.png'.format(i))
-                #     # plt.show()
-                    
-                #     # plt.pcolor(xx,xx,with_aberration.T,vmin=MIN,vmax=MAX)
-                #     # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-                #     # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-                #     # plt.title('real interaction')
-                #     # plt.axis('square')
-                #     # plt.colorbar()
-                #     # # plt.savefig('im{:d}.png'.format(i))
-                #     # plt.show()
-                
-                #     x = numpy.arange(corr.shape[0],dtype=float)
-                #     x -= x.max()/2.
-                #     x -= 0.5
-                #     x /= wfs.nx_subap_interp
-                #     yy,xx = numpy.meshgrid(x,x)
-                #     maxindex = numpy.array(numpy.where(corr==numpy.nanmax(corr)))[:,0]
-                #     locx = xx[maxindex[0],maxindex[1]]
-                #     locy = yy[maxindex[0],maxindex[1]]
-                    
-                #     # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
-                #     # plt.plot(locx,locy,ls='',marker='o',color='r')
-                #     # plt.colorbar()
-                #     # plt.axis('square')
-                #     # plt.title('correlation map max at ({:.2f},{:.2f})'.format(locx,locy)
-                #     #           + '\nSNR={:.2f}'.format(SNR))
-                #     # plt.show()
-                    
-                #     # threshold_ratio = 3e-1
-                #     # threshold = numpy.nanmax(corr)*threshold_ratio
-                #     # corr[corr<threshold] = numpy.nan
-                #     # corr -= threshold
-                    
-                    
-                #     # yy,xx = numpy.meshgrid(x,x)
-                    
-                #     # # locx = numpy.nansum(xx*corr*wfs.scaledMask)/numpy.nansum(corr*wfs.scaledMask)
-                #     # # locy = numpy.nansum(yy*corr*wfs.scaledMask)/numpy.nansum(corr*wfs.scaledMask)
-                #     # locx = xx[corr==numpy.nanmax(corr)][0]
-                #     # locy = yy[corr==numpy.nanmax(corr)][0]
-    
-                #     # if (locx == 0) or (locy == 0):
-                #     #     locx = numpy.nan
-                #     #     locy = numpy.nan
-                        
-                #     # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
-                #     # plt.plot(locx,locy,ls='',marker='o',color='r')
-                #     # plt.colorbar()
-                #     # plt.axis('square')
-                #     # plt.title('correlation map max at ({:.2f},{:.2f})'.format(locx,locy))
-                #     # # plt.title('correlation map with {:.2f}% threshold ({:.2f},{:.2f})'.format(threshold_ratio*100,locx,locy))
-                #     # plt.show()
-                    
-                #     cropped_corr = corr[maxindex[0] - 1 
-                #                         : maxindex[0] + 2,
-                #                         maxindex[1] - 1 
-                #                         : maxindex[1] + 2]
-                    
-                #     if ((cropped_corr[numpy.isnan(cropped_corr)].sum() <= 0.) 
-                #         and (cropped_corr.size >= 9.)):
-                        
-                #         # print(cropped_corr)
-                #         # cropped_x = numpy.arange(-1,2) / wfs.nx_subap_interp
-                #         # cropped_yy,cropped_xx = numpy.meshgrid(cropped_x,cropped_x)
-                        
-                #         # initial_guess = numpy.array([0,0,1,1,0])
-                        
-                #         # params, cov = curve_fit(parabola2d,
-                #         #                         (cropped_xx.flatten(),
-                #         #                          cropped_yy.flatten()),
-                #         #                         cropped_corr.flatten(),
-                #         #                         initial_guess)
-                        
-                #         # true_locx = params[0] + locx
-                #         # true_locy = params[1] + locy
-                        
-                #         # M. G. Löfdahl 2010
-                        
-                #         a2 = (cropped_corr[1,:].mean() - cropped_corr[-1,:].mean())/2.
-                #         a3 = (cropped_corr[1,:].mean() - 2.*cropped_corr[0,:].mean() + cropped_corr[-1,:].mean())/2.
-                #         a4 = (cropped_corr[:,1].mean() - cropped_corr[:,-1].mean())/2.
-                #         a5 = (cropped_corr[:,1].mean() - 2.*cropped_corr[:,0].mean() + cropped_corr[:,-1].mean())/2.
-                #         a6 = (cropped_corr[1,1] - cropped_corr[-1,1] - cropped_corr[1,-1] + cropped_corr[-1,-1])/4.
-                        
-                #         true_locx = (-1 + (2.*a2*a5 - a4*a6)/(a6**2 - 4.*a3*a5)) / wfs.nx_subap_interp  + locx
-                #         true_locy = (-1 + (2.*a3*a4 - a2*a6)/(a6**2 - 4.*a3*a5)) / wfs.nx_subap_interp  + locy
-
-                        
-                #         # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
-                #         # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-                #         # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-                #         # plt.plot(locx,locy,ls='',marker='o',color='r',label='max pixel')
-                #         # plt.plot(true_locx,true_locy,ls='',marker='o',color='k',label='true max')
-                #         # plt.legend()
-                #         # plt.colorbar()
-                #         # plt.axis('square')
-                #         # plt.title('correlation map max at ({:.2f},{:.2f})'.format(locx,locy)
-                #         #           + '\nSNR={:.2f}'.format(SNR)
-                #         #           #+ '\n x0,y0 fit = ({:.2f},{:.2f})'.format(params[0],params[1])
-                #         #           + '\ntrue max at ({:.2f},{:.2f})'.format(true_locx,true_locy))
-                #         # plt.show()
-                        
-                #         if ((numpy.abs(true_locx) < wfs.nx_subaps//2)
-                #             or (numpy.abs(true_locx) < wfs.nx_subaps//2)):
+                        if (plot == True) and (i == 40):
+                            actCommands = numpy.zeros((81),dtype=float)
+                            actCommands[20] = 1
+                            actCommands[22] = 1
+                            actCommands[24] = 1
+                            actCommands[38] = 1
+                            actCommands[40] = 1
+                            actCommands[42] = 1
+                            actCommands[56] = 1
+                            actCommands[58] = 1
+                            actCommands[60] = 1
+                            phase[dm.n_dm] = dm.dmFrame(actCommands)
+                            wfs.frame(None, phase_correction=phase, iMatFrame=True,iMatFramePlot=True)
                             
-                #             dm.subapShift[i,wfs_n,0] = true_locx
-                #             dm.subapShift[i,wfs_n,1] = true_locy
+                            xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
+                            xx -= xx.max()/2.
+                            xx /= wfs.nx_subap_interp
+                            
+                            zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
+                            
+                            wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
+                            
+                            with_aberration_efield = (wfs.interp_efield
+                                                    / numpy.asarray(zero_wfs_efield[wfs_n]))
+                            
+                            to_plot = numpy.angle(with_aberration_efield)
+                            to_plot -= numpy.nanmedian(to_plot)
+                            fig, ax1 = plt.subplots()
+                            
+                            c = ax1.pcolor(xx,xx,
+                                        -to_plot,vmin=0,vmax=0.012)
+                            
+                            ax1.hlines((-4,-3,-2,-1,0,1,2,3,4),xmin=-4,xmax=4,color='w')
+                            ax1.vlines((-4,-3,-2,-1,0,1,2,3,4),ymin=-4,ymax=4,color='w')
+                            ax1.plot([0,2,-2,0,0,-2,-2,2,2],[0,0,0,2,-2,-2,2,-2,2],color='k',marker='o',ls='')
+                            fig.colorbar(c,ax=ax1)
+                            ax1.axis('square')
+                            
+                            frame1 = ax1
+                            for xlabel_i in frame1.axes.get_xticklabels():
+                                xlabel_i.set_visible(False)
+                                xlabel_i.set_fontsize(0.0)
+                            for xlabel_i in frame1.axes.get_yticklabels():
+                                xlabel_i.set_fontsize(0.0)
+                                xlabel_i.set_visible(False)
+                                
+                            ax1.tick_params(axis='both', which='both', length=0)
+                            
+                            plt.gcf().set_size_inches(6,6)
+                            
+                            plt.savefig('dm_influence-' + time.strftime("%Y-%m-%d-%H-%M-%S") + '.png',
+                                        dpi=300,bbox_inches='tight',transparent=True)
                         
-                #     # else:
-                #     #     true_locx = numpy.nan
-                #     #     true_locy = numpy.nan
-                # # else:
-                # #     true_locx = numpy.nan
-                # #     true_locy = numpy.nan
-                
-                
-                
-                
-                # #     plt.imshow(wfs.wfsDetectorPlane)
-                # #     plt.title('wfs')
-                # #     plt.colorbar()
-                # #     plt.show()
-                
-                # #wfs.slopes = wfs.slopes - zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements]
-                # # make_quiver_plot(wfs.detector_cent_coords,
-                # #                  wfs.slopes
-                # #                  - zero_iMat[n_wfs_measurments
-                # #                              : n_wfs_measurments
-                # #                              + wfs.n_measurements])
+                            plt.show()
+                            # reset things to where they were
+                            actCommands[:] = 0
+    
+                            # Except the one we want to make an iMat for!
+                            actCommands[i] = 1 # dm.dmConfig.iMatValue
+                            phase[dm.n_dm] = dm.dmFrame(actCommands)
+                        
+                        xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
+                        xx -= xx.max()/2.
+                        xx /= wfs.nx_subap_interp
+                        # print(wfs.nx_subap_interp)
+                        
+                        zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
+                        
+                        wfs_size = wfs.interp_efield.shape[0]
+                        
+                        A = phase.shape[1]
+                        B = self.soapy_config.sim.pupilSize
+                        P = (A - B)//2
+                        Q = (A + B)//2
+                        
+                        no_aberration_efield = (numpy.exp(1j*interp.zoom(phase[:-1,P:Q,P:Q].sum(0),wfs_size)/500.*2*numpy.pi))
+                        no_aberration = numpy.angle(no_aberration_efield)
+                        no_aberration[wfs.scaledMask == 0] = numpy.nan
+                        
+                        wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
+                        
+                        with_aberration_efield = (wfs.interp_efield
+                                                / numpy.asarray(zero_wfs_efield[wfs_n]))
+                        
+                        with_aberration = numpy.angle(with_aberration_efield)
+                        with_aberration[wfs.scaledMask == 0] = numpy.nan
+        
+                        wfs.interp_efield /= numpy.nanmean(numpy.abs(wfs.interp_efield)**2)**0.5
+                        
+                        dm.rytov[i,wfs_n] = numpy.nanvar(numpy.log(numpy.abs(
+                            wfs.interp_efield[
+                                numpy.asarray(wfs.scaledMask,dtype=bool)])))
+                        
+                        # no_aberration_phase_max_x,no_aberration_phase_max_y = find_centre(no_aberration,wfs.nx_subap_interp)
+                        # with_aberration_phase_max_x,with_aberration_phase_max_y = find_centre(-with_aberration,wfs.nx_subap_interp)
+                        # max_shift_x = with_aberration_phase_max_x - no_aberration_phase_max_x
+                        # max_shift_y = with_aberration_phase_max_y - no_aberration_phase_max_y
+                        
+                        # dm.subapShiftv2[i,wfs_n,0] = max_shift_x
+                        # dm.subapShiftv2[i,wfs_n,1] = max_shift_y
+                        
+                        # MAX = numpy.nanmax(-no_aberration)
+                        # MIN = numpy.nanmin(-no_aberration)
+                        # plt.pcolor(xx,xx,with_aberration.T)
+                        # plt.plot(with_aberration_phase_max_x,with_aberration_phase_max_y,marker='o',color='r')
+                        # plt.plot(no_aberration_phase_max_x,no_aberration_phase_max_y,marker='^',color='k')
+                        # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.axis('square')
+                        # plt.colorbar()
+                        # plt.show()
+                        
+                        size_A = with_aberration.shape[0]
+                        
+                        corr = numpy.fft.fftshift(numpy.fft.ifft2(
+                            numpy.fft.fft2(numpy.pad(
+                                numpy.nan_to_num(with_aberration),
+                                ((size_A//2,size_A//2),(size_A//2,size_A//2)),mode='constant'))
+                            * numpy.conjugate(numpy.fft.fft2(numpy.pad(
+                                numpy.nan_to_num(-no_aberration),
+                                ((size_A//2,size_A//2),(size_A//2,size_A//2)),mode='constant')))
+                            )).real[size_A//2:size_A*3//2,size_A//2:size_A*3//2]
+
+                        
+                        # MAX = numpy.nanmax(-no_aberration)
+                        # MIN = numpy.nanmin(-no_aberration)
+                        
+                        # plt.pcolor(xx,xx,-no_aberration.T,vmin=MIN,vmax=MAX)
+                        # plt.axis('square')
+                        # plt.title('original poke phase')
+                        # plt.colorbar()
+                        # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # # plt.savefig('poke{:d}.png'.format(i))
+                        # plt.show()
+                        
+                        # plt.pcolor(xx,xx,with_aberration.T,vmin=MIN,vmax=MAX)
+                        # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.title('real interaction')
+                        # plt.axis('square')
+                        # plt.colorbar()
+                        # # plt.savefig('im{:d}.png'.format(i))
+                        # plt.show()
                     
+                        
+                        
+                        
+                        true_locx, true_locy = find_centre(corr,wfs.nx_subap_interp)
+                        
+                        
+                        # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
+                        # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.plot(locx,locy,ls='',marker='o',color='r',label='max pixel')
+                        # plt.plot(true_locx,true_locy,ls='',marker='o',color='k',label='true max')
+                        # plt.legend()
+                        # plt.colorbar()
+                        # plt.axis('square')
+                        # plt.title('true max at ({:.2f},{:.2f})'.format(true_locx,true_locy))
+                        # plt.show()
+                        
+                        if ((numpy.abs(true_locx) < wfs.nx_subaps//2)
+                            or (numpy.abs(true_locx) < wfs.nx_subaps//2)):
+                            
+                            dm.subapShift[i,wfs_n,0] = true_locx
+                            dm.subapShift[i,wfs_n,1] = true_locy
+                        else:
+                            dm.subapShift[i,wfs_n,0] = numpy.nan
+                            dm.subapShift[i,wfs_n,1] = numpy.nan
+                        
+                        # POS = dm.valid_act_coords[i] - dm.valid_act_coords.max()//2
+                        # xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
+                        # xx -= xx.max()/2.
+                        # xx /= wfs.nx_subap_interp
+                        # MAX = numpy.nanmax(-no_aberration)
+                        # MIN = numpy.nanmin(-no_aberration)
+                        # # plt.imshow(with_aberration);plt.show()
+                        # plt.pcolor(xx,xx,with_aberration.T,vmin=MIN,vmax=MAX)
+                        # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.plot(true_locx + POS[0],true_locy+POS[1],ls='',marker='o',color='r',label='true max')
+                        # plt.plot(POS[0],POS[1],ls='',marker='^',color='k',label='original max')
+                        # # plt.title('real interaction'
+                        # #           + '\nact_original at ({:.2f},{:.2f})'.format(POS[0],POS[1])
+                        # #           + '\nact_actual at ({:.2f},{:.2f})'.format(true_locx+POS[0],true_locy+POS[1])
+                        # #           + '\nshift = ({:.2f},{:.2f})'.format(true_locx,true_locy))
+                        # plt.axis('square')
+                        # plt.colorbar()
+                        # # plt.savefig('im{:d}.png'.format(i))
+                        # plt.show()
+
+                        
                     
                 
                 n_wfs_measurments += wfs.n_measurements
@@ -837,11 +705,12 @@ class Reconstructor(object):
 
     def makeCMat(
             self, loadIMat=True, loadCMat=True, callback=None,
-            progressCallback=None):
+            progressCallback=None,
+            imat_to_load=None,cmat_to_load=None):
 
         if loadIMat:
             try:
-                self.load_interaction_matrix()
+                self.load_interaction_matrix(imat_to_load=imat_to_load)
                 logger.info("Interaction Matrices loaded successfully")
             except:
                 tc = traceback.format_exc()
@@ -853,13 +722,13 @@ class Reconstructor(object):
 
         else:
             self.makeIMat(callback=callback)
-            if self.sim_config.simName is not None:
-                    self.save_interaction_matrix()
+            # if self.sim_config.simName is not None:
+            #         self.save_interaction_matrix()
             logger.info("Interaction Matrices Done")
 
         if loadCMat:
             try:
-                self.loadCMat()
+                self.loadCMat(cmat_to_load=cmat_to_load)
                 logger.info("Command Matrix Loaded Successfully")
             except:
                 tc = traceback.format_exc()
@@ -1542,36 +1411,36 @@ class ANN(Reconstructor):
         return dmCommands
 
 def get_rcond_adaptive_threshold_rank(A,plot=False,return_place=False):
-  # _,s,_ = numpy.linalg.svd(A)
-  # s /= s.max()
-  # energy = s**2
-  # energy /= energy.sum()
-  # accumulated_energy = numpy.zeros_like(energy)
-  # threshold = 1/2./numpy.linalg.matrix_rank(A)
+  _,s,_ = numpy.linalg.svd(A)
+  s /= s.max()
+  energy = s**2
+  energy /= energy.sum()
+  accumulated_energy = numpy.zeros_like(energy)
+  threshold = 1/2./numpy.linalg.matrix_rank(A)
 
-  # for i in numpy.arange(energy.shape[0]):
-  #   accumulated_energy[i] = energy[:i].sum()
-  # residual = 1 - accumulated_energy
-  # place = numpy.where(residual<=threshold)[0][0]
+  for i in numpy.arange(energy.shape[0]):
+    accumulated_energy[i] = energy[:i].sum()
+  residual = 1 - accumulated_energy
+  place = numpy.where(residual<=threshold)[0][0]
   
-  # if plot==True:
-  #   # plt.plot(residual,label='residual')
-  #   # plt.hlines(residual[place],0,s.shape[0])
-  #   # plt.vlines(place,0,1)
-  #   # plt.yscale('log')
-  #   # plt.show()
+  if plot==True:
+    # plt.plot(residual,label='residual')
+    # plt.hlines(residual[place],0,s.shape[0])
+    # plt.vlines(place,0,1)
+    # plt.yscale('log')
+    # plt.show()
 
-  #   plt.plot(s)
-  #   plt.hlines(s[place],0,s.shape[0])
-  #   plt.vlines(place,0,1)
-  #   plt.yscale('log')
-  #   plt.show()
-  # rcond = s[place]
-  # if return_place == True:
-  #   return rcond, place
-  # else:
-  #   return rcond
-  return 0.05
+    plt.plot(s)
+    plt.hlines(s[place],0,s.shape[0])
+    plt.vlines(place,0,1)
+    plt.yscale('log')
+    plt.show()
+  rcond = s[place]
+  if return_place == True:
+    return rcond, place
+  else:
+    return rcond
+#   return 0.05
 
 def pinv_adaptive_threshold_rank(A,return_rcond=False):
     if return_rcond == False:
@@ -1653,408 +1522,48 @@ def parabola2d(xy,x0,y0,ax,ay,c):
     z = ax*(x - x0)**2 + ay*(y - y0)**2 + c
     return z
 
-# iMat = poke(dm,self.n_dms,self.scrn_size,self.dms,self.wfss,self.config.imat_noise,zero_iMat,iMat,callback)
-# @numba.jit(nopython=False, parallel=True)
-# def poke(dm,n_dms,scrn_size,dms,wfss,imat_noise,zero_iMat,iMat,callback):
-#     for i in range(dm.n_acts):
-#         actCommands = numpy.zeros(dm.n_acts)
-#         # Set vector of iMat commands and phase to 0
-#         actCommands[:] = 0
+def find_centre(corr,nx_subap_interp):
+    # M. G. Löfdahl 2010
+    try:
+        x = numpy.arange(corr.shape[0],dtype=float)
+        x -= x.max()/2.
+        x -= 0.5
+        x /= nx_subap_interp
+        yy,xx = numpy.meshgrid(x,x)
+        
+        maxindex = numpy.array(numpy.where(corr==numpy.nanmax(corr)))[:,0]
+        
 
-#         # Except the one we want to make an iMat for!
-#         actCommands[i] = 1 # dm.dmConfig.iMatValue
-#         phase = numpy.zeros((n_dms, scrn_size, scrn_size))
-#         # Now get a DM shape for that command
-#         phase[dm.n_dm] = dm.dmFrame(actCommands)
-#         for DM_N, DM in dms.items():
-#             if DM.config.type == 'Aberration':
-#                 if DM.config.calibrate == False:
-#                     phase[DM_N] = DM.dmFrame(1)
-#                 else:
-#                     phase[DM_N] = DM.dmFrame(0)
-#         # Send the DM shape off to the relavent WFS. put result in iMat
-#         n_wfs_measurments = 0
-#         for wfs_n, wfs in wfss.items():
-#             # turn off wfs noise if set
-#             if imat_noise is False:
-#                 wfs_pnoise = wfs.config.photonNoise
-#                 wfs.config.photonNoise = False
-#                 wfs_rnoise = wfs.config.eReadNoise
-#                 wfs.config.eReadNoise = 0
-            
-#             # plot = False
-#             # if (plot == True) and (i == 40):
-#             # #     plt.imshow(phase.sum(0))
-#             # #     plt.title('all geom dm')
-#             # #     plt.colorbar()
-#             # #     plt.show()
-#             #     actCommands = numpy.zeros((81),dtype=float)
-#             #     actCommands[20] = 1
-#             #     actCommands[22] = 1
-#             #     actCommands[24] = 1
-#             #     actCommands[38] = 1
-#             #     actCommands[40] = 1
-#             #     actCommands[42] = 1
-#             #     actCommands[56] = 1
-#             #     actCommands[58] = 1
-#             #     actCommands[60] = 1
-#             #     phase[dm.n_dm] = dm.dmFrame(actCommands)
-#             #     wfs.frame(None, phase_correction=phase, iMatFrame=True)
-                
-#             #     xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
-#             #     xx -= xx.max()/2.
-#             #     xx /= wfs.nx_subap_interp
-                
-#             #     zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
-                
-                
-#             #     wfs_size = wfs.interp_efield.shape[0]
-                
-#             #     A = phase.shape[1]
-#             #     B = self.soapy_config.sim.pupilSize
-#             #     P = (A - B)//2
-#             #     Q = (A + B)//2
-                
-#             #     no_aberration_efield = (numpy.exp(1j*interp.zoom(phase[:-1,P:Q,P:Q].sum(0),wfs_size)/500.*2*numpy.pi))
-                
-#             #     wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
-                
-#             #     with_aberration_efield = (wfs.interp_efield
-#             #                             / numpy.asarray(zero_wfs_efield[wfs_n]))
-                
-#             #     to_plot = numpy.angle(with_aberration_efield)
-#             #     to_plot -= numpy.nanmedian(to_plot)
-#             #     fig, ax1 = plt.subplots()
-                
-#             #     c = ax1.pcolor(xx,xx,
-#             #                 -to_plot,vmin=0,vmax=0.012)
-                
-#             #     ax1.hlines((-4,-3,-2,-1,0,1,2,3,4),xmin=-4,xmax=4,color='w')
-#             #     ax1.vlines((-4,-3,-2,-1,0,1,2,3,4),ymin=-4,ymax=4,color='w')
-#             #     ax1.plot([0,2,-2,0,0,-2,-2,2,2],[0,0,0,2,-2,-2,2,-2,2],color='k',marker='o',ls='')
-#             #     fig.colorbar(c,ax=ax1)
-#             #     ax1.axis('square')
-                
-#             #     frame1 = ax1
-#             #     for xlabel_i in frame1.axes.get_xticklabels():
-#             #         xlabel_i.set_visible(False)
-#             #         xlabel_i.set_fontsize(0.0)
-#             #     for xlabel_i in frame1.axes.get_yticklabels():
-#             #         xlabel_i.set_fontsize(0.0)
-#             #         xlabel_i.set_visible(False)
-                    
-#             #     ax1.tick_params(axis='both', which='both', length=0)
-                
-#             #     plt.gcf().set_size_inches(6,6)
-                
-#             #     plt.savefig('dm_influence-' + time.strftime("%Y-%m-%d-%H-%M-%S") + '.png',
-#             #                 dpi=300,bbox_inches='tight',transparent=True)
-            
-#             #     plt.show()
-            
-#             iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = -1 * (
-#                 wfs.frame(None, phase_correction=phase, iMatFrame=True)
-#                 - zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements])# / dm.dmConfig.iMatValue
-#             # # plt.plot(wfs.frame(None, phase_correction=phase, iMatFrame=True),label='wfs measurement')
-#             # # plt.plot(zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements],label='zero')
-#             # # plt.plot(iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements],label='IM')
-#             # # plt.legend()
-#             # # plt.show()
-            
-#             # # if i == 40:
-#             # #     plt.imshow(phase.sum(0))
-#             # #     plt.title('all geom dm')
-#             # #     plt.colorbar()
-#             # #     plt.show()
-            
-#             # xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
-#             # xx -= xx.max()/2.
-#             # xx /= wfs.nx_subap_interp
-            
-#             # zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
-            
-#             # # plt.pcolor(xx,xx,numpy.angle(numpy.asarray(zero_wfs_efield[wfs_n])).T)
-#             # # plt.axis('square')
-#             # # plt.title('0 phase')
-#             # # plt.colorbar()
-#             # # plt.show()
-            
-#             # # hdu = fits.PrimaryHDU([numpy.exp(1j*phase[:-1,129:257,129:257].sum(0)/500.*2*3.14).real,
-#             # #                       numpy.exp(1j*phase[:-1,129:257,129:257].sum(0)/500.*2*3.14).imag])
-#             # # hdul = fits.HDUList([hdu])
-#             # # hdul.writeto('poke{:d}.fits'.format(i),overwrite=True)
-#             # # # hdu.close()
-            
-#             # wfs_size = wfs.interp_efield.shape[0]
-            
-#             # A = phase.shape[1]
-#             # B = self.soapy_config.sim.pupilSize
-#             # P = (A - B)//2
-#             # Q = (A + B)//2
-            
-#             # no_aberration_efield = (numpy.exp(1j*interp.zoom(phase[:-1,P:Q,P:Q].sum(0),wfs_size)/500.*2*numpy.pi))
-#             # min_phase = -0.012#(-numpy.angle(no_aberration_efield)).min()
-#             # max_phase = 0#(-numpy.angle(no_aberration_efield)).max()
-#             # # no_aberration_efield /= numpy.nanmean(no_aberration_efield)
-#             # # no_aberration_efield /= numpy.sqrt(numpy.nanmean(numpy.abs(no_aberration_efield)**2))
-#             # no_aberration = numpy.angle(no_aberration_efield)
-#             # # print(no_aberration_efield[80,80])
-#             # no_aberration[wfs.scaledMask == 0] = numpy.nan
-            
-            
-            
-#             # # temp1 = interp.zoom(phase[-1,P:Q,P:Q],wfs_size)
-#             # # temp1[wfs.scaledMask == 0] = numpy.nan
-            
-#             # # plt.pcolor(xx,xx,numpy.angle(numpy.exp(1j*temp1/500.*2*3.14)).T)
-#             # # plt.title('aberration at altitude')
-#             # # plt.axis('square')
-#             # # plt.colorbar()
-#             # # plt.show()
-            
-#             # wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
-            
-#             # # plt.pcolor(xx,xx,numpy.angle(wfs.interp_efield.T))
-#             # # plt.axis('square')
-#             # # plt.title('actual poke phase')
-#             # # plt.colorbar()
-#             # # plt.show()
-            
-#             # # hdu = fits.PrimaryHDU([(interp.zoom(wfs.interp_efield,128)
-#             # #                        / numpy.asarray(zero_wfs_efield[wfs_n])).real,
-#             # #                        (interp.zoom(wfs.interp_efield,128)
-#             # #                                               / numpy.asarray(zero_wfs_efield[wfs_n])).imag])
-#             # # hdul = fits.HDUList([hdu])
-#             # # hdul.writeto('im{:d}.fits'.format(i),overwrite=True)
-#             # # # hdu.close()
-            
-#             # with_aberration_efield = (wfs.interp_efield
-#             #                        / numpy.asarray(zero_wfs_efield[wfs_n]))
-            
-#             # # if i == 40:
-#             # #     to_plot = numpy.angle(with_aberration_efield)
-#             # #     to_plot -= numpy.nanmedian(to_plot)
-#             # #     N = with_aberration_efield.shape[0]
-#             # #     fig, ax1 = plt.subplots()
-                
-#             # #     c = ax1.pcolor(numpy.arange(N),
-#             # #                numpy.arange(N),
-#             # #                to_plot,vmax=0,vmin=-0.012)
-#             # #     ax1.plot([N/2 - 0.5],[N/2 - 0.5],color='r',marker='o')
-#             # #     fig.colorbar(c,ax=ax1)
-#             # #     ax1.axis('square')
-                
-#             # #     frame1 = ax1
-#             # #     for xlabel_i in frame1.axes.get_xticklabels():
-#             # #         xlabel_i.set_visible(False)
-#             # #         xlabel_i.set_fontsize(0.0)
-#             # #     for xlabel_i in frame1.axes.get_yticklabels():
-#             # #         xlabel_i.set_fontsize(0.0)
-#             # #         xlabel_i.set_visible(False)
-                    
-#             # #     ax1.tick_params(axis='both', which='both', length=0)
-                
-#             # #     plt.gcf().set_size_inches(6,6)
-                
-#             # #     plt.savefig('dm_influence-' + time.strftime("%Y-%m-%d-%H-%M-%S") + '.png',
-#             # #                 dpi=300,bbox_inches='tight',transparent=True)
-            
-#             # #     plt.show()
-            
-#             # # print(numpy.nanmean(with_aberration_efield))
-#             # # with_aberration_efield /= numpy.nanmean(with_aberration_efield)
-#             # # plt.imshow(numpy.angle(with_aberration_efield))
-#             # # plt.show()
-#             # # # print(numpy.sqrt(numpy.nanmean(numpy.abs(with_aberration_efield)**2)))
-#             # # with_aberration_efield /= numpy.sqrt(numpy.nanmean(numpy.abs(with_aberration_efield)**2))
-#             # with_aberration = numpy.angle(with_aberration_efield)
-#             # # print(with_aberration_efield[80,80])
-#             # with_aberration[wfs.scaledMask == 0] = numpy.nan
-
-            
-#             # # U1 = wfs.scaledMask
-#             # # U2 = wfs.interp_efield*wfs.scaledMask
-            
-#             # wfs.interp_efield /= numpy.nanmean(numpy.abs(wfs.interp_efield)**2)**0.5
-            
-#             # dm.rytov[i,wfs_n] = numpy.nanvar(numpy.log(numpy.abs(
-#             #     wfs.interp_efield[
-#             #         numpy.asarray(wfs.scaledMask,dtype=bool)])))
-            
-            
-#             # # corr = (convolve2d(numpy.nan_to_num(with_aberration),
-#             # #                    numpy.nan_to_num(no_aberration)))
-            
-#             # size_A = with_aberration.shape[0]
-            
-#             # corr = numpy.fft.fftshift(numpy.fft.ifft2(
-#             #     numpy.fft.fft2(numpy.pad(
-#             #         numpy.nan_to_num(with_aberration),
-#             #         ((size_A//2,size_A//2),(size_A//2,size_A//2)),mode='constant'))
-#             #     * numpy.conjugate(numpy.fft.fft2(numpy.pad(
-#             #         numpy.nan_to_num(-no_aberration),
-#             #         ((size_A//2,size_A//2),(size_A//2,size_A//2)),mode='constant')))
-#             #     )).real[size_A//2:size_A*3//2,size_A//2:size_A*3//2]
-            
-#             # corr[wfs.scaledMask == 0] = numpy.nan
-            
-#             # SNR = (numpy.nanmax(corr) - numpy.nanmin(corr))/numpy.nanstd(corr)
-            
-#             # # if numpy.nanmax(corr) < numpy.abs(numpy.nanmin(corr)):
-#             # #     corr *= -1
-#             # # print(corr.shape,with_aberration.shape,no_aberration.shape)
-            
-#             # if SNR >= 5.:
-                
-#             #     # MAX = numpy.nanmax(-no_aberration)
-#             #     # MIN = numpy.nanmin(-no_aberration)
-                
-#             #     # plt.pcolor(xx,xx,-no_aberration.T,vmin=MIN,vmax=MAX)
-#             #     # plt.axis('square')
-#             #     # plt.title('original poke phase')
-#             #     # plt.colorbar()
-#             #     # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-#             #     # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-#             #     # # plt.savefig('poke{:d}.png'.format(i))
-#             #     # plt.show()
-                
-#             #     # plt.pcolor(xx,xx,with_aberration.T,vmin=MIN,vmax=MAX)
-#             #     # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-#             #     # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-#             #     # plt.title('real interaction')
-#             #     # plt.axis('square')
-#             #     # plt.colorbar()
-#             #     # # plt.savefig('im{:d}.png'.format(i))
-#             #     # plt.show()
-            
-#             #     x = numpy.arange(corr.shape[0],dtype=float)
-#             #     x -= x.max()/2.
-#             #     x -= 0.5
-#             #     x /= wfs.nx_subap_interp
-#             #     yy,xx = numpy.meshgrid(x,x)
-#             #     maxindex = numpy.array(numpy.where(corr==numpy.nanmax(corr)))[:,0]
-#             #     locx = xx[maxindex[0],maxindex[1]]
-#             #     locy = yy[maxindex[0],maxindex[1]]
-                
-#             #     # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
-#             #     # plt.plot(locx,locy,ls='',marker='o',color='r')
-#             #     # plt.colorbar()
-#             #     # plt.axis('square')
-#             #     # plt.title('correlation map max at ({:.2f},{:.2f})'.format(locx,locy)
-#             #     #           + '\nSNR={:.2f}'.format(SNR))
-#             #     # plt.show()
-                
-#             #     # threshold_ratio = 3e-1
-#             #     # threshold = numpy.nanmax(corr)*threshold_ratio
-#             #     # corr[corr<threshold] = numpy.nan
-#             #     # corr -= threshold
-                
-                
-#             #     # yy,xx = numpy.meshgrid(x,x)
-                
-#             #     # # locx = numpy.nansum(xx*corr*wfs.scaledMask)/numpy.nansum(corr*wfs.scaledMask)
-#             #     # # locy = numpy.nansum(yy*corr*wfs.scaledMask)/numpy.nansum(corr*wfs.scaledMask)
-#             #     # locx = xx[corr==numpy.nanmax(corr)][0]
-#             #     # locy = yy[corr==numpy.nanmax(corr)][0]
-
-#             #     # if (locx == 0) or (locy == 0):
-#             #     #     locx = numpy.nan
-#             #     #     locy = numpy.nan
-                    
-#             #     # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
-#             #     # plt.plot(locx,locy,ls='',marker='o',color='r')
-#             #     # plt.colorbar()
-#             #     # plt.axis('square')
-#             #     # plt.title('correlation map max at ({:.2f},{:.2f})'.format(locx,locy))
-#             #     # # plt.title('correlation map with {:.2f}% threshold ({:.2f},{:.2f})'.format(threshold_ratio*100,locx,locy))
-#             #     # plt.show()
-                
-#             #     cropped_corr = corr[maxindex[0] - 1 
-#             #                         : maxindex[0] + 2,
-#             #                         maxindex[1] - 1 
-#             #                         : maxindex[1] + 2]
-                
-#             #     if ((cropped_corr[numpy.isnan(cropped_corr)].sum() <= 0.) 
-#             #         and (cropped_corr.size >= 9.)):
-                    
-#             #         # print(cropped_corr)
-#             #         # cropped_x = numpy.arange(-1,2) / wfs.nx_subap_interp
-#             #         # cropped_yy,cropped_xx = numpy.meshgrid(cropped_x,cropped_x)
-                    
-#             #         # initial_guess = numpy.array([0,0,1,1,0])
-                    
-#             #         # params, cov = curve_fit(parabola2d,
-#             #         #                         (cropped_xx.flatten(),
-#             #         #                          cropped_yy.flatten()),
-#             #         #                         cropped_corr.flatten(),
-#             #         #                         initial_guess)
-                    
-#             #         # true_locx = params[0] + locx
-#             #         # true_locy = params[1] + locy
-                    
-#             #         # M. G. Löfdahl 2010
-                    
-#             #         a2 = (cropped_corr[1,:].mean() - cropped_corr[-1,:].mean())/2.
-#             #         a3 = (cropped_corr[1,:].mean() - 2.*cropped_corr[0,:].mean() + cropped_corr[-1,:].mean())/2.
-#             #         a4 = (cropped_corr[:,1].mean() - cropped_corr[:,-1].mean())/2.
-#             #         a5 = (cropped_corr[:,1].mean() - 2.*cropped_corr[:,0].mean() + cropped_corr[:,-1].mean())/2.
-#             #         a6 = (cropped_corr[1,1] - cropped_corr[-1,1] - cropped_corr[1,-1] + cropped_corr[-1,-1])/4.
-                    
-#             #         true_locx = (-1 + (2.*a2*a5 - a4*a6)/(a6**2 - 4.*a3*a5)) / wfs.nx_subap_interp  + locx
-#             #         true_locy = (-1 + (2.*a3*a4 - a2*a6)/(a6**2 - 4.*a3*a5)) / wfs.nx_subap_interp  + locy
-
-                    
-#             #         # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
-#             #         # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-#             #         # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-#             #         # plt.plot(locx,locy,ls='',marker='o',color='r',label='max pixel')
-#             #         # plt.plot(true_locx,true_locy,ls='',marker='o',color='k',label='true max')
-#             #         # plt.legend()
-#             #         # plt.colorbar()
-#             #         # plt.axis('square')
-#             #         # plt.title('correlation map max at ({:.2f},{:.2f})'.format(locx,locy)
-#             #         #           + '\nSNR={:.2f}'.format(SNR)
-#             #         #           #+ '\n x0,y0 fit = ({:.2f},{:.2f})'.format(params[0],params[1])
-#             #         #           + '\ntrue max at ({:.2f},{:.2f})'.format(true_locx,true_locy))
-#             #         # plt.show()
-                    
-#             #         if ((numpy.abs(true_locx) < wfs.nx_subaps//2)
-#             #             or (numpy.abs(true_locx) < wfs.nx_subaps//2)):
-                        
-#             #             dm.subapShift[i,wfs_n,0] = true_locx
-#             #             dm.subapShift[i,wfs_n,1] = true_locy
-                    
-#             #     # else:
-#             #     #     true_locx = numpy.nan
-#             #     #     true_locy = numpy.nan
-#             # # else:
-#             # #     true_locx = numpy.nan
-#             # #     true_locy = numpy.nan
-            
-            
-            
-            
-#             # #     plt.imshow(wfs.wfsDetectorPlane)
-#             # #     plt.title('wfs')
-#             # #     plt.colorbar()
-#             # #     plt.show()
-            
-#             # #wfs.slopes = wfs.slopes - zero_iMat[n_wfs_measurments: n_wfs_measurments+wfs.n_measurements]
-#             # # make_quiver_plot(wfs.detector_cent_coords,
-#             # #                  wfs.slopes
-#             # #                  - zero_iMat[n_wfs_measurments
-#             # #                              : n_wfs_measurments
-#             # #                              + wfs.n_measurements])
-                
-                
-            
-#             n_wfs_measurments += wfs.n_measurements
-
-#             # Turn noise back on again if it was turned off
-#             if imat_noise is False:
-#                 wfs.config.photonNoise = wfs_pnoise
-#                 wfs.config.eReadNoise = wfs_rnoise
-
-#         if callback != None:
-#             callback()
-#     return iMat
+        
+        cropped_corr = corr[maxindex[0] - 1 
+                            : maxindex[0] + 2,
+                            maxindex[1] - 1 
+                            : maxindex[1] + 2]
+        
+        locx = xx[maxindex[0],maxindex[1]]
+        locy = yy[maxindex[0],maxindex[1]]
+        
+        a2 = (cropped_corr[1 + 1,:].mean() - cropped_corr[-1 + 1,:].mean())/2.
+        a3 = (cropped_corr[1 + 1,:].mean() - 2.*cropped_corr[0 + 1,:].mean() + cropped_corr[-1 + 1,:].mean())/2.
+        a4 = (cropped_corr[:,1 + 1].mean() - cropped_corr[:,-1 + 1].mean())/2.
+        a5 = (cropped_corr[:,1 + 1].mean() - 2.*cropped_corr[:,0 + 1].mean() + cropped_corr[:,-1 + 1].mean())/2.
+        a6 = (cropped_corr[1 + 1,1 + 1] - cropped_corr[-1 + 1,1 + 1] - cropped_corr[1 + 1,-1 + 1] + cropped_corr[-1 + 1,-1 + 1])/4.
+        
+        true_locx = ((2.*a2*a5 - a4*a6)/(a6**2 - 4.*a3*a5))
+        true_locy = ((2.*a3*a4 - a2*a6)/(a6**2 - 4.*a3*a5))
+        
+        # plt.pcolor([-1,0,1],[-1,0,1],cropped_corr.T)
+        # plt.plot(true_locx,true_locy,marker='o',color='r')
+        # plt.axis('square')
+        # plt.show()
+        
+        true_locx /= nx_subap_interp
+        true_locy /= nx_subap_interp
+        
+        true_locx += locx
+        true_locy += locy
+    
+    except:
+        return numpy.nan, numpy.nan
+    
+    return true_locx, true_locy

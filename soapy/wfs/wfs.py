@@ -395,7 +395,7 @@ class WFS(object):
             # Add onto the focal plane with that layers intensity
             self.calcFocalPlane(intensity=self.lgsConfig.naProfile[i], los=self.los[i])
 
-    def frame(self, scrns, phase_correction=None, read=True, iMatFrame=False):
+    def frame(self, scrns, phase_correction=None, read=True, iMatFrame=False, loopIter=None, iMatFramePlot=False):
         '''
         Runs one WFS frame
 
@@ -430,10 +430,10 @@ class WFS(object):
         if self.config.lgs:
 	    # If no elongation
             if self.elong!=0:
-                self.los.frame(scrns=scrns)
+                self.los.frame(scrns=scrns,loopIter=loopIter,iMatFramePlot=iMatFramePlot)
                 self.makeElongationFrame(phase_correction)
             else:
-                self.los.frame(scrns=scrns,correction=phase_correction)
+                self.los.frame(scrns=scrns,correction=phase_correction,loopIter=loopIter,iMatFramePlot=iMatFramePlot)
                 self.uncorrectedPhase = self.los.uncorrectedPhase
                 if self.config.lgs.precompensated:
                     self.lgs.precorrection = phase_correction
@@ -441,7 +441,7 @@ class WFS(object):
 
   
         else:
-            self.los.frame(scrns=scrns,correction=phase_correction)
+            self.los.frame(scrns=scrns,correction=phase_correction,loopIter=loopIter,iMatFramePlot=iMatFramePlot)
             self.uncorrectedPhase = self.los.uncorrectedPhase
             self.calcFocalPlane()
 
@@ -466,29 +466,49 @@ class WFS(object):
         if numpy.any(numpy.isnan(self.slopes)):
             numpy.nan_to_num(self.slopes)
         
+        if (scrns is not None):
+            plot = True
+        else:
+            plot = False
         
-        # P = self.scaledMask*self.interp_efield
-        # Q = self.scaledMask
-        # # plt.quiver(P.real,P.imag)
-        # # plt.axis('square')
-        # # plt.show()
-        # # plt.imshow(numpy.abs(P)**2/(numpy.abs(P)**2).mean(),vmin=0,vmax=3)
-        # # plt.colorbar()
-        # # plt.show()
-        # # plt.imshow(numpy.angle(P),vmin=-numpy.pi,vmax=numpy.pi)
-        # # plt.colorbar()
-        # # plt.show()
-        # strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
-        #                     / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
-        #                     / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
-        # rytov = numpy.var(numpy.log(numpy.abs(P[numpy.asarray(Q,dtype=bool)])))
+        try:
+            if self.soapy_config.wfss[0].plot == False:        
+                plot = False
+        except:
+            plot = False
+            
+        if ((plot == True) 
+            and ((loopIter == 0) 
+                 or (loopIter == (self.soapy_config.sim.nIters - 1)) 
+                 or (iMatFramePlot == True))):
+            plot == True
+        else:
+            plot = False
         
-        # plt.imshow(self.wfsDetectorPlane/(self.wfsDetectorPlane.max()),vmin=0,vmax=1)
-        # plt.colorbar()
-        # plt.title('wfs detector plane, Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
-        # plt.show()
-        
-        # make_quiver_plot(self)
+        if plot == True:
+            
+            P = self.scaledMask*self.interp_efield
+            Q = self.scaledMask
+            # plt.quiver(P.real,P.imag)
+            # plt.axis('square')
+            # plt.show()
+            # plt.imshow(numpy.abs(P)**2/(numpy.abs(P)**2).mean(),vmin=0,vmax=3)
+            # plt.colorbar()
+            # plt.show()
+            # plt.imshow(numpy.angle(P),vmin=-numpy.pi,vmax=numpy.pi)
+            # plt.colorbar()
+            # plt.show()
+            strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+                                / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+                                / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+            rytov = numpy.var(numpy.log(numpy.abs(P[numpy.asarray(Q,dtype=bool)])))
+            
+            plt.imshow(self.wfsDetectorPlane/(self.wfsDetectorPlane.max()),vmin=0,vmax=1)
+            plt.colorbar()
+            plt.title('wfs detector plane, Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
+            plt.show()
+            
+            make_quiver_plot(self)
 
         if read:
             return self.slopes

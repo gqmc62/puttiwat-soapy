@@ -34,12 +34,13 @@ DM:
     iMatValue: 1
     nollMode: 45
     r0: 0.04276341
-    subtype: Atmosphere_perfect_DM
+    subtype: Atmosphere_perfect_DM_no_tip_tilt
     type: Aberration
 Reconstructor:
   gain: 0.5
-  svdConditioning: adaptive
+  svdConditioning: 0.05
   type: MVM
+  analyseAberationCalib: true
 Science:
   0:
     FOV: 20
@@ -50,7 +51,7 @@ Science:
     pxls: 200
     wavelength: 500e-9
     fftOversamp: 2
-    fftwThreads: 2
+    fftwThreads: 8
     fftwFlag: FFTW_MEASURE
 Telescope:
   mask: circle
@@ -71,7 +72,7 @@ WFS:
     subapThreshold: 0.9
     type: ShackHartmann
     wavelength: 500e-9
-    fftwThreads: 2
+    fftwThreads: 8
     fftwFlag: FFTW_MEASURE
 loopTime: 0.001
 nDM: 3
@@ -84,12 +85,14 @@ saveDmCommands: true
 saveInstPsf: false
 saveInstScieField: false
 saveLgsPsf: false
-saveSciPsf: false
+saveSciPsf: true
 saveSciRes: true
+saveAtmSlopes: true
 saveSlopes: true
 saveStrehl: true
 saveWfe: true
+saveRytov: true
 saveWfsFrames: false
 simName: bad_IM
-threads: 4
+threads: 8
 verbosity: 0

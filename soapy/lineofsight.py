@@ -623,7 +623,7 @@ class LineOfSight(object):
         return self.EField#,self.EField_buf 
 
 
-    def performCorrection(self, correction):
+    def performCorrection(self, correction,loopIter=None,iMatFramePlot=False):
         """
         Corrects the aberrated line of sight with some given correction phase
         
@@ -632,7 +632,7 @@ class LineOfSight(object):
         """
         
         if self.config.propagationMode == 'Physical':
-            self.performCorrectionPhysical(correction)
+            self.performCorrectionPhysical(correction,loopIter=loopIter,iMatFramePlot=iMatFramePlot)
         else:
             self.performCorrectionGeometric(correction)
         
@@ -693,7 +693,7 @@ class LineOfSight(object):
         
     
             
-    def performCorrectionPhysical(self, correction):
+    def performCorrectionPhysical(self, correction,loopIter=None,iMatFramePlot=False):
         # either up or down, still need to start from pupil, ... right?
         # anyway for 'down' definitely need to pick up from the pupil
         for i in range(correction.shape[0]):
@@ -742,12 +742,26 @@ class LineOfSight(object):
         #     original_state = numpy.copy(self.EField_buf[self.low_buf:self.high_buf,
         #                                         self.low_buf:self.high_buf])
         #     original_state_buf = numpy.copy(self.EField_buf)
-            
+        
         if (self.config.type == 'ShackHartmann') and (self.scrns is not None):
             plot = True
         else:
             plot = False
-        plot = False
+        
+        try:
+            if self.soapy_config.wfss[0].plot == False:        
+                plot = False
+        except:
+            plot = False
+            
+        if ((plot == True) 
+            and ((loopIter == 0) 
+                 or (loopIter == (self.soapy_config.sim.nIters - 1)) 
+                 or (iMatFramePlot == True))):
+            plot == True
+        else:
+            plot = False
+            
         physical_correction_propagation(
             self.correction_screens_buf, self.prop_mask, self.dm_altitudes,
             self.wavelength, self.out_pixel_scale,
@@ -1006,7 +1020,7 @@ class LineOfSight(object):
         #                     plt.title('Ig tilt')
         #                     plt.show()
 
-    def frame(self, scrns=None, correction=None):
+    def frame(self, scrns=None, correction=None,loopIter=None,iMatFramePlot=False):
         '''
         Runs one frame through a line of sight
 
@@ -1034,7 +1048,7 @@ class LineOfSight(object):
 
         # If we propagate up, must do correction first!
         if (self.propagation_direction == "up"):
-            self.performCorrection(correction)
+            self.performCorrection(correction,loopIter=loopIter,iMatFramePlot=iMatFramePlot)
 
         # Now do propagation through atmospheric turbulence
         if scrns is not None:
@@ -1061,7 +1075,7 @@ class LineOfSight(object):
                     if self.config.lgs.elongationDepth != 0:
                         return self.residual
 
-        self.performCorrection(correction)
+        self.performCorrection(correction,loopIter=loopIter,iMatFramePlot=iMatFramePlot)
         
         return self.residual
 
@@ -1453,10 +1467,10 @@ class ElongLineOfSight(object):
     def __getitem__(self, index):
         return self.los_list[index]
 
-    def frame(self, scrns=None, correction=None):
+    def frame(self, scrns=None, correction=None,loopIter=None,iMatFramePlot=None):
         
         for i,los in enumerate(self.los_list):
-            los.frame(scrns, correction)
+            los.frame(scrns, correction,loopIter=loopIter,iMatFramePlot=iMatFramePlot)
 
     def zeroData(self):
 

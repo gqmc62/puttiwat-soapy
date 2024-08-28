@@ -166,6 +166,16 @@ class PSFCamera(object):
                 self.sim_pad: -self.sim_pad,
                 self.sim_pad: -self.sim_pad] # crop to pupil size
         
+        residual_field = numpy.copy(self.EField_fov)*self.pupil_mask
+            
+        piston = numpy.nansum(residual_field)/self.pupil_mask
+        piston /= numpy.abs(piston)
+        
+        residual_field /= piston
+        residual_field *= self.pupil_mask
+
+        self.residual = residual_field
+        
         if self.config.propagationDir == "down":
             self.EField_fov *= self.pupil_mask
 
@@ -279,23 +289,36 @@ class PSFCamera(object):
         """
         if self.config.propagationMode == "Physical":
             
-            residual_field = numpy.copy(self.EField_fov)*self.pupil_mask
-            
-            piston = residual_field.sum()/self.pupil_mask
-            piston /= numpy.abs(piston)
-            
-            residual_field /= piston
-            residual_field *= self.pupil_mask
+            residual_field = self.residual
             
             # plt.imshow(numpy.angle(residual_field)*self.mask,vmin=-numpy.pi,vmax=numpy.pi)
             # plt.title('science residual rad phys')
             # plt.colorbar()
             # plt.show()
             
-            ms_wfe = numpy.square(numpy.angle(residual_field)/self.los.phs2Rad*self.pupil_mask).sum() / self.pupil_mask.sum()
-            rms_wfe = numpy.sqrt(ms_wfe)
+            piston = numpy.nansum(residual_field)/self.pupil_mask
+            piston /= numpy.abs(piston)
             
-            return rms_wfe
+            residual_field /= piston
+            residual_field *= self.pupil_mask
+            
+            ms_wfe = numpy.nansum(numpy.square(numpy.angle(residual_field)/self.los.phs2Rad*self.pupil_mask)) / numpy.nansum(self.pupil_mask)
+            rms_wfe = numpy.sqrt(ms_wfe)
+            # print(rms_wfe)
+            
+            if self.soapy_config.sim.saveRytov :
+            
+                P = residual_field
+                Q = self.pupil_mask
+                
+                # strehl = (numpy.abs(numpy.sum(P*numpy.conjugate(Q)))**2
+                #                     / numpy.abs(numpy.sum(P*numpy.conjugate(P)))
+                #                     / numpy.abs(numpy.sum(Q*numpy.conjugate(Q))))
+                rytov = numpy.var(numpy.log(numpy.abs(P[numpy.asarray(Q,dtype=bool)])))
+                
+                return rms_wfe, rytov
+            else:
+                return rms_wfe
         
         else:
             res = (self.los.phase.copy() * self.mask) / self.los.phs2Rad

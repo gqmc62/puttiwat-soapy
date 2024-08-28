@@ -558,12 +558,16 @@ class Aberration(DM):
         if self.config.subtype == 'Atmosphere_perfect_DM':
             xActs = self.dmConfig.nxActuators
             self.spcing = self.nx_dm_elements/float(xActs - 1)
+        if self.config.subtype == 'Atmosphere_perfect_DM_no_tip_tilt':
+            xActs = self.dmConfig.nxActuators
+            self.spcing = self.nx_dm_elements/float(xActs - 1)
         
         return self.n_active_actuators
     
     def makeDMFrame(self,actCoeffs=0):
         if self.config.r0 == numpy.inf:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
         if self.config.subtype == 'OneZernike':
             aberration = self.makeOneZernikeAberration(actCoeffs=actCoeffs)
         if self.config.subtype == 'Atmosphere':
@@ -574,6 +578,8 @@ class Aberration(DM):
             aberration = self.makeZernikeAberration_no_tip_tilt(actCoeffs=actCoeffs)
         if self.config.subtype == 'Atmosphere_perfect_DM':
             aberration = self.makeAtmosphereAberration_perfect_DM(actCoeffs=actCoeffs)
+        if self.config.subtype == 'Atmosphere_perfect_DM_no_tip_tilt':
+            aberration = self.makeAtmosphereAberration_perfect_DM_no_tip_tilt(actCoeffs=actCoeffs)
         
         return aberration
     
@@ -751,6 +757,13 @@ class Aberration(DM):
                     # return self.aberration
                 except:
                     # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
+                    try:
+                        self.random_seed
+                        if self.random_seed is not None:
+                            numpy.random.seed(self.random_seed)
+                            self.random_seed = None
+                    except:
+                        pass
                     self.atm_ab = atmosphere.InfinitePhaseScreen(
                         self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
                         self.config.r0, self.config.L0, wind_speed=0,
@@ -836,6 +849,13 @@ class Aberration(DM):
                     # return self.aberration
                 except:
                     # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
+                    try:
+                        self.random_seed
+                        if self.random_seed is not None:
+                            numpy.random.seed(self.random_seed)
+                            self.random_seed = None
+                    except:
+                        pass
                     self.atm_ab = atmosphere.InfinitePhaseScreen(
                         self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
                         self.config.r0, self.config.L0, wind_speed=0,
@@ -884,6 +904,13 @@ class Aberration(DM):
                     self.aberration = aberration
                     # return self.aberration
                 except:
+                    try:
+                        self.random_seed
+                        if self.random_seed is not None:
+                            numpy.random.seed(self.random_seed)
+                            self.random_seed = None
+                    except:
+                        pass
                     # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
                     self.atm_ab = atmosphere.InfinitePhaseScreen(
                         self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
@@ -918,6 +945,13 @@ class Aberration(DM):
                     # return self.aberration
                 except:
                     # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
+                    try:
+                        self.random_seed
+                        if self.random_seed is not None:
+                            numpy.random.seed(self.random_seed)
+                            self.random_seed = None
+                    except:
+                        pass
                     self.atm_ab = atmosphere.InfinitePhaseScreen(
                         self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
                         self.config.r0, self.config.L0, wind_speed=0,

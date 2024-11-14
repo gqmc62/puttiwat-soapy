@@ -3,6 +3,7 @@ Atmosphere:
   - 4
   infinite: true
   r0: 0.05
+  removedTipTiltPiston: true
   scrnHeights:
   - 0
   scrnNo: 1
@@ -13,7 +14,6 @@ Atmosphere:
   windSpeeds:
   - 0
   - 0
-  removedTipTiltPiston: True
 DM:
   0:
     altitude: 0
@@ -29,31 +29,31 @@ DM:
     type: FastPiezo
   2:
     L0: 8.0
-    altitude: 5000
+    altitude: 2765.1301895563756
     calibrate: true
     closed: true
     iMatValue: 1
     nollMode: 45
-    r0: 0.05
+    r0: 0.03603114398984538
     subtype: Atmosphere_perfect_DM_no_tip_tilt
     type: Aberration
 Reconstructor:
+  analyseAberationCalib: true
   gain: 0.4
   svdConditioning: 0.05
   type: MVM
-  analyseAberationCalib: true
 Science:
   0:
     FOV: 20
+    fftOversamp: 2
+    fftwFlag: FFTW_MEASURE
+    fftwThreads: 8
     position:
     - 0
     - 0
     propagationMode: Physical
     pxls: 200
     wavelength: 500e-9
-    fftOversamp: 2
-    fftwThreads: 8
-    fftwFlag: FFTW_MEASURE
 Telescope:
   mask: circle
   obsDiam: 0.0
@@ -66,6 +66,8 @@ WFS:
     - 0
     - 0
     fftOversamp: 1
+    fftwFlag: FFTW_MEASURE
+    fftwThreads: 8
     nxSubaps: 8
     propagationMode: Physical
     pxlsPerSubap: 20
@@ -73,27 +75,25 @@ WFS:
     subapThreshold: 0.9
     type: ShackHartmann
     wavelength: 500e-9
-    fftwThreads: 8
-    fftwFlag: FFTW_MEASURE
 loopTime: 0.001
 nDM: 3
 nGS: 1
-nIters: 20
+nIters: 5
 nSci: 1
 pupilSize: 128
+saveAtmSlopes: true
 saveCalib: true
 saveDmCommands: true
 saveInstPsf: false
 saveInstScieField: false
 saveLgsPsf: false
+saveRytov: true
 saveSciPsf: true
 saveSciRes: true
-saveAtmSlopes: true
 saveSlopes: true
 saveStrehl: true
 saveWfe: true
-saveRytov: true
 saveWfsFrames: false
-simName: bad_IM
+simName: bad_IM-rytov0.30-AS31%
 threads: 8
 verbosity: 0

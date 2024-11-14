@@ -30,6 +30,57 @@ from scipy.signal import convolve2d
 from scipy.optimize import curve_fit
 import os
 
+def my_unwrap(wrapped_phase, period=2*numpy.pi):
+    
+    # numpy unwrap start unwrap at 0 coordinate
+    # but for circular aperture there is no corner!
+    # if we unwrap by each quardrant there will be a corner! noice.
+    # but we may have to stitch them back together nicely
+    # so things should be de-piston to the center
+    
+    center = wrapped_phase.shape[-1]//2
+    unwrapped_phase = numpy.zeros_like(wrapped_phase)
+    
+    # ++ quardrant
+    wrapped_quardrant = wrapped_phase[...,center:,center:]
+    unwrapped_quardrant = numpy.unwrap(numpy.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,center:,center:] = unwrapped_quardrant
+    
+    # +- quardrant
+    wrapped_quardrant = wrapped_phase[...,center:,:center][:,::-1]
+    unwrapped_quardrant = numpy.unwrap(numpy.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,center:,:center] = unwrapped_quardrant[:,::-1]
+    
+    # -+ quardrant
+    wrapped_quardrant = wrapped_phase[...,:center,center:][::-1,:]
+    unwrapped_quardrant = numpy.unwrap(numpy.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,:center,center:] = unwrapped_quardrant[::-1,:]
+      
+    # -- quardrant
+    wrapped_quardrant = wrapped_phase[...,:center,:center][::-1,::-1]
+    unwrapped_quardrant = numpy.unwrap(numpy.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,:center,:center] = unwrapped_quardrant[::-1,::-1]
+    
+    return unwrapped_phase
+
+def crop_inscribed_square(circular_data):
+    N = circular_data.shape[0]
+    R = int(numpy.floor(N//2))
+    r = int(numpy.floor(R/numpy.sqrt(2)))
+    square_data = circular_data[N//2 - r
+                  : N//2 + r,
+                  N//2 - r
+                  : N//2 + r]
+    return square_data
+
 # Use pyfits or astropy for fits file handling
 try:
     from astropy.io import fits
@@ -280,9 +331,17 @@ class Reconstructor(object):
             imat_data = imat_to_load
             imat_totalActs = imat_data.shape[0]
             imat_totalWfsData = imat_data.shape[1]
-            
-            self.dms[i].valid_actuators = numpy.ones((self.dms[i].n_acts), dtype="int")
-            self.interaction_matrix = imat_data
+            # print(self.n_dms)
+            for i in range(self.n_dms):
+                # print(i)
+                # print(self.soapy_config.dms[i].type)
+                if not (self.soapy_config.dms[i].type == 'Aberration'):
+                    # print('1')
+                    # print(self.dms[i].n_acts)
+                    # print('1.5')
+                    self.dms[i].valid_actuators = numpy.ones((self.dms[i].n_acts), dtype="int")
+                    # print('2')
+                    self.interaction_matrix = imat_data
 
     def makeIMat(self, callback=None):
 
@@ -344,9 +403,10 @@ class Reconstructor(object):
             if DM.config.type == 'Aberration':
                 ABERRATION = True
                 if DM.config.calibrate == False:
-                    phase[DM_N] = DM.dmFrame(1)
+                    phase[DM_N] = DM.dmFrame('flat')
                 else:
-                    phase[DM_N] = DM.dmFrame(0)
+                    phase[DM_N] = DM.dmFrame('shape')
+                    # print('yes')
         # Send the DM shape off to the relavent WFS. put result in iMat
         n_wfs_measurments = 0
         for wfs_n, wfs in self.wfss.items():
@@ -397,9 +457,12 @@ class Reconstructor(object):
             for DM_N, DM in self.dms.items():
                 if DM.config.type == 'Aberration':
                     if DM.config.calibrate == False:
-                        phase[DM_N] = DM.dmFrame(1)
+                        phase[DM_N] = DM.dmFrame('flat')
                     else:
-                        phase[DM_N] = DM.dmFrame(0)
+                        phase[DM_N] = DM.dmFrame('shape')
+                        # plt.imshow(phase[DM_N])
+                        # plt.colorbar()
+                        # plt.show()
             # Send the DM shape off to the relavent WFS. put result in iMat
             n_wfs_measurments = 0
             for wfs_n, wfs in self.wfss.items():
@@ -413,7 +476,6 @@ class Reconstructor(object):
                 plot = self.soapy_config.wfss[0].plot
                 
                 
-                    
                 
                 iMat[i, n_wfs_measurments: n_wfs_measurments+wfs.n_measurements] = -1 * (
                     wfs.frame(scrns=None, phase_correction=phase, iMatFrame=True)
@@ -435,6 +497,11 @@ class Reconstructor(object):
                             actCommands[58] = 1
                             actCommands[60] = 1
                             phase[dm.n_dm] = dm.dmFrame(actCommands)
+                            for nPhase in range(phase.shape[0]):
+                                plt.imshow(phase[nPhase])
+                                plt.colorbar()
+                                plt.title('DM{:}'.format(nPhase))
+                                plt.show()
                             wfs.frame(None, phase_correction=phase, iMatFrame=True,iMatFramePlot=True)
                             
                             xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
@@ -442,18 +509,30 @@ class Reconstructor(object):
                             xx /= wfs.nx_subap_interp
                             
                             zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
+                            # plt.imshow(numpy.asarray(zero_wfs_efield[wfs_n]).real)
+                            # plt.show()
                             
                             wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
+                            # plt.imshow(wfs.interp_efield.real)
+                            # plt.show()
                             
                             with_aberration_efield = (wfs.interp_efield
                                                     / numpy.asarray(zero_wfs_efield[wfs_n]))
+                            # plt.imshow(with_aberration_efield.real)
+                            # plt.show()
                             
-                            to_plot = numpy.angle(with_aberration_efield)
+                            
+                            to_plot = numpy.unwrap(numpy.unwrap(numpy.angle(numpy.nan_to_num(with_aberration_efield)),axis=0),axis=1)
+                            to_plot[wfs.scaledMask == 0] = numpy.nan
+                            # to_plot = my_unwrap(numpy.angle(with_aberration_efield))
+                            # plt.imshow(to_plot)
+                            # plt.show()
                             to_plot -= numpy.nanmedian(to_plot)
                             fig, ax1 = plt.subplots()
-                            
+                            # print(to_plot[64,64])
+                            poke_value = self.soapy_config.dms[1].iMatValue*1e-9 / self.soapy_config.wfss[0].wavelength * 2.0 * numpy.pi
                             c = ax1.pcolor(xx,xx,
-                                        -to_plot,vmin=0,vmax=0.012)
+                                        -to_plot,vmin=0,vmax=poke_value)
                             
                             ax1.hlines((-4,-3,-2,-1,0,1,2,3,4),xmin=-4,xmax=4,color='w')
                             ax1.vlines((-4,-3,-2,-1,0,1,2,3,4),ymin=-4,ymax=4,color='w')
@@ -473,6 +552,7 @@ class Reconstructor(object):
                             
                             plt.gcf().set_size_inches(6,6)
                             
+                            plt.title('dm_influence')
                             plt.savefig('dm_influence-' + time.strftime("%Y-%m-%d-%H-%M-%S") + '.png',
                                         dpi=300,bbox_inches='tight',transparent=True)
                         
@@ -482,14 +562,22 @@ class Reconstructor(object):
     
                             # Except the one we want to make an iMat for!
                             actCommands[i] = 1 # dm.dmConfig.iMatValue
+                            phase[:] = 0
                             phase[dm.n_dm] = dm.dmFrame(actCommands)
+                            
+                            for DM_N, DM in self.dms.items():
+                                if DM.config.type == 'Aberration':
+                                    if DM.config.calibrate == False:
+                                        phase[DM_N] = DM.dmFrame('flat')
+                                    else:
+                                        phase[DM_N] = DM.dmFrame('shape')
                         
                         xx = numpy.arange(numpy.array(zero_wfs_efield[wfs_n]).shape[0],dtype=float)
                         xx -= xx.max()/2.
                         xx /= wfs.nx_subap_interp
                         # print(wfs.nx_subap_interp)
                         
-                        zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
+                        # zero_wfs_efield[wfs_n][wfs.scaledMask == 0] = numpy.nan
                         
                         wfs_size = wfs.interp_efield.shape[0]
                         
@@ -499,16 +587,18 @@ class Reconstructor(object):
                         Q = (A + B)//2
                         
                         no_aberration_efield = (numpy.exp(1j*interp.zoom(phase[:-1,P:Q,P:Q].sum(0),wfs_size)/500.*2*numpy.pi))
-                        no_aberration = numpy.angle(no_aberration_efield)
-                        no_aberration[wfs.scaledMask == 0] = numpy.nan
+                        no_aberration = numpy.unwrap(numpy.unwrap(numpy.angle(no_aberration_efield),axis=0),axis=1)
+                        # no_aberration[wfs.scaledMask == 0] = numpy.nan
                         
-                        wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
+                        # wfs.interp_efield[wfs.scaledMask == 0] = numpy.nan
                         
                         with_aberration_efield = (wfs.interp_efield
                                                 / numpy.asarray(zero_wfs_efield[wfs_n]))
                         
+                        # with_aberration = numpy.unwrap(numpy.unwrap(numpy.angle(with_aberration_efield),axis=0),axis=1)
                         with_aberration = numpy.angle(with_aberration_efield)
-                        with_aberration[wfs.scaledMask == 0] = numpy.nan
+                        # with_aberration[wfs.scaledMask == 0] = numpy.nan
+                        with_aberration[wfs.scaledMask == 0] = 0
         
                         wfs.interp_efield /= numpy.nanmean(numpy.abs(wfs.interp_efield)**2)**0.5
                         
@@ -516,8 +606,8 @@ class Reconstructor(object):
                             wfs.interp_efield[
                                 numpy.asarray(wfs.scaledMask,dtype=bool)])))
                         
-                        # no_aberration_phase_max_x,no_aberration_phase_max_y = find_centre(no_aberration,wfs.nx_subap_interp)
-                        # with_aberration_phase_max_x,with_aberration_phase_max_y = find_centre(-with_aberration,wfs.nx_subap_interp)
+                        no_aberration_phase_max_x,no_aberration_phase_max_y = find_centre(no_aberration,wfs.nx_subap_interp)
+                        with_aberration_phase_max_x,with_aberration_phase_max_y = find_centre(-with_aberration,wfs.nx_subap_interp)
                         # max_shift_x = with_aberration_phase_max_x - no_aberration_phase_max_x
                         # max_shift_y = with_aberration_phase_max_y - no_aberration_phase_max_y
                         
@@ -526,16 +616,27 @@ class Reconstructor(object):
                         
                         # MAX = numpy.nanmax(-no_aberration)
                         # MIN = numpy.nanmin(-no_aberration)
+                        # plt.pcolor(xx,xx,numpy.angle(with_aberration_efield.T))
+                        # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
+                        # plt.axis('square')
+                        # plt.colorbar()
+                        # plt.title('with aberration efield')
+                        # plt.show()
                         # plt.pcolor(xx,xx,with_aberration.T)
                         # plt.plot(with_aberration_phase_max_x,with_aberration_phase_max_y,marker='o',color='r')
                         # plt.plot(no_aberration_phase_max_x,no_aberration_phase_max_y,marker='^',color='k')
                         # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
                         # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
                         # plt.axis('square')
+                        # plt.title('with aberration')
                         # plt.colorbar()
                         # plt.show()
                         
                         size_A = with_aberration.shape[0]
+                        
+                        with_aberration[wfs.scaledMask == 0] = numpy.nan
+                        no_aberration[wfs.scaledMask == 0] = numpy.nan
                         
                         corr = numpy.fft.fftshift(numpy.fft.ifft2(
                             numpy.fft.fft2(numpy.pad(
@@ -573,11 +674,10 @@ class Reconstructor(object):
                         
                         true_locx, true_locy = find_centre(corr,wfs.nx_subap_interp)
                         
-                        
+                        # x = numpy.linspace(-4,4,num=corr.shape[0])
                         # plt.pcolor(x,x,corr.T)#,vmin=0,vmax=1000)
                         # plt.hlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
                         # plt.vlines(numpy.arange(-4,5),-4,4,ls=':',color='r')
-                        # plt.plot(locx,locy,ls='',marker='o',color='r',label='max pixel')
                         # plt.plot(true_locx,true_locy,ls='',marker='o',color='k',label='true max')
                         # plt.legend()
                         # plt.colorbar()
@@ -707,7 +807,6 @@ class Reconstructor(object):
             self, loadIMat=True, loadCMat=True, callback=None,
             progressCallback=None,
             imat_to_load=None,cmat_to_load=None):
-
         if loadIMat:
             try:
                 self.load_interaction_matrix(imat_to_load=imat_to_load)

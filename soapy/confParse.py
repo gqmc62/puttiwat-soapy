@@ -225,6 +225,9 @@ class PY_Configurator(object):
             for isci in range(self.sim.nSci):
                 new = (numpy.abs(self.scis[isci].position)).max()
                 maxSciPOS = numpy.max([new,maxSciPOS])
+            self.lenslet_size = numpy.zeros((self.sim.nGS),dtype=float)
+            for iwfs in range(self.sim.nGS):
+                self.lenslet_size[iwfs] = self.tel.telDiam / self.wfss[iwfs].nxSubaps
             
             # oversize = int(numpy.ceil((  ( (2.*max_wavelength/self.scrnStrengths).sum()
             #                               + max_sci_fov*(2.*numpy.pi/360./3600.))
@@ -276,7 +279,7 @@ class PY_Configurator(object):
                     self.sim.pxlScale * max_height
                     * (self.sim.max_sim_fov + 2*self.sim.max_diffraction_angle)
                       + self.sim.simSize)
-                /2.)*2)
+                /2.)*2 + self.wfss[0].pxlsPerSubap)
             
             # self.sim.scrnSize = int(numpy.ceil((
             #         self.sim.pxlScale * max_height
@@ -755,7 +758,8 @@ class AtmosConfig(ConfigObj):
                         ("infinite", False),
                         ("wholeScrnSize", None),
                         # ("elevationAngle", 90),
-                        ("randomSeed", None)
+                        ("randomSeed", None),
+                        ("removedTipTiltPiston", False)
                        ]
 
     # Parameters which may be set at some point and are allowed
@@ -1154,7 +1158,9 @@ class DmConfig(ConfigObj):
         ("calibrate", False),
         ("subtype", None),
         ("r0", None),
-        ("L0", None)
+        ("L0", None),
+        ("conjugateLayer", None),
+        ("random_seed", None)
     ]
 
     calculatedParams = [

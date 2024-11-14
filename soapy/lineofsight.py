@@ -57,6 +57,57 @@ except NameError:
 RAD2ASEC = 206264.849159
 ASEC2RAD = 1./RAD2ASEC
 
+def my_unwrap(wrapped_phase, period=2*np.pi):
+    
+    # numpy unwrap start unwrap at 0 coordinate
+    # but for circular aperture there is no corner!
+    # if we unwrap by each quardrant there will be a corner! noice.
+    # but we may have to stitch them back together nicely
+    # so things should be de-piston to the center
+    
+    center = wrapped_phase.shape[-1]//2
+    unwrapped_phase = np.zeros_like(wrapped_phase)
+    
+    # ++ quardrant
+    wrapped_quardrant = wrapped_phase[...,center:,center:]
+    unwrapped_quardrant = np.unwrap(np.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,center:,center:] = unwrapped_quardrant
+    
+    # +- quardrant
+    wrapped_quardrant = wrapped_phase[...,center:,:center][:,::-1]
+    unwrapped_quardrant = np.unwrap(np.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,center:,:center] = unwrapped_quardrant[:,::-1]
+    
+    # -+ quardrant
+    wrapped_quardrant = wrapped_phase[...,:center,center:][::-1,:]
+    unwrapped_quardrant = np.unwrap(np.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,:center,center:] = unwrapped_quardrant[::-1,:]
+      
+    # -- quardrant
+    wrapped_quardrant = wrapped_phase[...,:center,:center][::-1,::-1]
+    unwrapped_quardrant = np.unwrap(np.unwrap(wrapped_quardrant,axis=0),axis=1)
+      
+    unwrapped_quardrant -= unwrapped_quardrant[0,0]
+    unwrapped_phase[...,:center,:center] = unwrapped_quardrant[::-1,::-1]
+    
+    return unwrapped_phase
+
+def crop_inscribed_square(circular_data):
+    N = circular_data.shape[0]
+    R = int(np.floor(N//2))
+    r = int(np.floor(R/np.sqrt(2)))
+    square_data = circular_data[N//2 - r
+                  : N//2 + r,
+                  N//2 - r
+                  : N//2 + r]
+    return square_data
+
 class LineOfSight(object):
     """
     A "Line of sight" through a number of turbulence layers in the atmosphere,
@@ -205,7 +256,11 @@ class LineOfSight(object):
         #     self.fov = self.config.subapFOV * 2*np.pi/360./3600.
         # except:
         #     self.fov = self.config.FOV * 2*np.pi/360./3600.
-        self.fov = 0
+        if (self.config.type == 'ShackHartmann'):
+            self.FOV = self.config.subapFOV/206265.
+        elif (self.config.type == 'PSF'):
+            self.FOV = self.config.FOV/206265.
+        # self.fov = 0
         
         
             
@@ -250,10 +305,13 @@ class LineOfSight(object):
             # things don't always share the same pixel scale
             
             # dm & atm are previously atm pad = (original + 2wvlz/r0/delta pxl each side)
+            
+            
+            
             self.nx_in_pixels = int(numpy.ceil(
                 (self.nx_out_pixels
                  + numpy.max(numpy.concatenate([self.dm_altitudes,self.layer_altitudes,[0]]))
-                 * (2*self.max_diffraction_angle)/self.out_pixel_scale)
+                 * (2*self.max_diffraction_angle + self.FOV)/self.out_pixel_scale)
                 /2)*2)
             
             
@@ -613,7 +671,8 @@ class LineOfSight(object):
             self.EField_buf[:] = np.copy(self.EField_buf[:] * self.prop_mask)
         # print('currently have no pupil funciton!!!!')
         
-        self.phase[:] = numpy.angle(self.EField[:])
+        self.phase[:] = my_unwrap(numpy.angle(self.EField[:]))
+        # self.phase[:] = np.unwrap(np.unwrap(numpy.angle(self.EField[:]),axis=0),axis=1)
         
         self.EField = self.EField_buf[self.low_buf:self.high_buf,
                                       self.low_buf:self.high_buf]
@@ -641,7 +700,8 @@ class LineOfSight(object):
         plot = False
         if plot == True:
             if (self.scrns.sum() != 0):
-                original = numpy.angle(self.EField)
+                # original = np.unwrap(np.unwrap(numpy.angle(self.EField),axis=0),axis=1)
+                original = my_unwrap(numpy.angle(self.EField))
         
         for i in range(correction.shape[0]):
             numbalib.bilinear_interp(
@@ -697,6 +757,7 @@ class LineOfSight(object):
         # either up or down, still need to start from pupil, ... right?
         # anyway for 'down' definitely need to pick up from the pupil
         for i in range(correction.shape[0]):
+            
             numbalib.bilinear_interp(
                 correction[i], self.dm_metapupil_coords[i, 0], self.dm_metapupil_coords[i, 1],
                 self.correction_screens[i], bounds_check=False)
@@ -791,7 +852,8 @@ class LineOfSight(object):
         self.EField /= mean_phase
         
         
-        self.residual = np.angle(self.EField) / self.phs2Rad
+        # self.residual = np.unwrap(np.unwrap(np.angle(self.EField),axis=0),axis=1) / self.phs2Rad
+        self.residual = my_unwrap(np.angle(self.EField)) / self.phs2Rad
         self.phase = self.residual * self.phs2Rad
         
 
@@ -1212,9 +1274,12 @@ def physical_correction_propagation(
         mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
                                                     (A-B)//2:(A+B)//2])/np.sum(output_mask)
         
-        prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        # prop_dm_phase = np.unwrap(np.unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #                                             (A-B)//2:(A+B)//2]
+        #                             /mean_phase),axis=0),axis=1)
+        prop_dm_phase = my_unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
                                                     (A-B)//2:(A+B)//2]
-                                    /mean_phase)
+                                    /mean_phase))
         
         prop_dm_intensity = np.abs((EFieldBuf)[(A-B)//2:(A+B)//2,
                                             (A-B)//2:(A+B)//2])**2
@@ -1238,6 +1303,15 @@ def physical_correction_propagation(
         plt.title('intensity before corrections: Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
         plt.colorbar()
         plt.show()
+        for i in np.arange(correction.shape[0]):
+            plt.imshow(correction[i]*phs2Rad)#,vmin=0,vmax=3)
+            plt.title('DM{:} phase (rad): Strehl={:.2f}, Rytov={:.2f}'.format(i,strehl,rytov))
+            plt.colorbar()
+            plt.show()
+        plt.imshow(correction.sum(0)*phs2Rad)#,vmin=0,vmax=3)
+        plt.title('Sum DM phase (rad): Strehl={:.2f}, Rytov={:.2f}'.format(strehl,rytov))
+        plt.colorbar()
+        plt.show()
 
     # Propagate to first phase screen (if not already there)
     if ht != scrnAlts[0]:
@@ -1249,33 +1323,36 @@ def physical_correction_propagation(
     # Go through and propagate between phase screens
     for i in scrnRange:
         
-        if plot == True:
+        # if plot == True:
         
-            A = EFieldBuf.shape[-1]
-            B = 159#self.plot_mask.shape[0]
+        #     A = EFieldBuf.shape[-1]
+        #     B = 159#self.plot_mask.shape[0]
             
-            mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2])/np.sum(output_mask)
+        #     mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #                                                 (A-B)//2:(A+B)//2])/np.sum(output_mask)
             
-            prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2]
-                                        /mean_phase)
+        #     # prop_dm_phase = np.unwrap(np.unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #     #                                             (A-B)//2:(A+B)//2]
+        #     #                             /mean_phase),axis=0),axis=1)
+        #     prop_dm_phase = my_unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #                                                 (A-B)//2:(A+B)//2]
+        #                                 /mean_phase))
             
-            prop_dm_intensity = np.abs((EFieldBuf)[(A-B)//2:(A+B)//2,
-                                                (A-B)//2:(A+B)//2])**2
+        #     prop_dm_intensity = np.abs((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2])**2
     
-            mean_intensity = numpy.nanmean(prop_dm_intensity[np.asarray(output_mask[(A-B)//2:(A+B)//2,
-                                                (A-B)//2:(A+B)//2],dtype=bool)])
+        #     mean_intensity = numpy.nanmean(prop_dm_intensity[np.asarray(output_mask[(A-B)//2:(A+B)//2,
+        #                                         (A-B)//2:(A+B)//2],dtype=bool)])
             
-            plt.imshow(prop_dm_intensity/mean_intensity)#,vmin=0,vmax=3)
-            plt.title('intensity at dm : {}'.format(i))
-            plt.colorbar()
-            plt.show()
+        #     plt.imshow(prop_dm_intensity/mean_intensity)#,vmin=0,vmax=3)
+        #     plt.title('intensity at dm : {}'.format(i))
+        #     plt.colorbar()
+        #     plt.show()
             
-            plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
-            plt.title('phase before correction at dm : {}'.format(i))
-            plt.colorbar()
-            plt.show()
+        #     plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
+        #     plt.title('phase before correction at dm : {}'.format(i))
+        #     plt.colorbar()
+        #     plt.show()
 
 
         phase = correction[i]
@@ -1287,28 +1364,33 @@ def physical_correction_propagation(
         # Apply phase to EField
         EFieldBuf *= numpy.exp(-1j*phase)
         
-        if plot == True:
+        # if plot == True:
         
-            A = EFieldBuf.shape[-1]
-            B = 159#self.plot_mask.shape[0]
+        #     A = EFieldBuf.shape[-1]
+        #     B = 159#self.plot_mask.shape[0]
             
-            mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2])/np.sum(output_mask)
+        #     mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #                                                 (A-B)//2:(A+B)//2])/np.sum(output_mask)
             
-            prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2]
-                                        /mean_phase)
+        #     # prop_dm_phase = np.unwrap(np.unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #     #                                             (A-B)//2:(A+B)//2]
+        #     #                             /mean_phase),axis=0),axis=1)
+        #     prop_dm_phase = my_unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #                                                 (A-B)//2:(A+B)//2]
+        #                                 /mean_phase))
+        #     # TOPLOT = np.unwrap(np.unwrap(numpy.angle(numpy.exp(1j*phase[(A-B)//2:(A+B)//2,
+        #     #                                             (A-B)//2:(A+B)//2])),axis=0),axis=1)
+        #     TOPLOT = my_unwrap(numpy.angle(numpy.exp(1j*phase[(A-B)//2:(A+B)//2,
+        #                                                 (A-B)//2:(A+B)//2])))
+        #     plt.imshow(TOPLOT)#,vmin=-numpy.pi,vmax=numpy.pi)
+        #     plt.title('phase corrected by dm : {}'.format(i))
+        #     plt.colorbar()
+        #     plt.show()
             
-            plt.imshow(numpy.angle(numpy.exp(1j*phase[(A-B)//2:(A+B)//2,
-                                                        (A-B)//2:(A+B)//2])))#,vmin=-numpy.pi,vmax=numpy.pi)
-            plt.title('phase corrected by dm : {}'.format(i))
-            plt.colorbar()
-            plt.show()
-            
-            plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
-            plt.title('phase after correction at dm : {}'.format(i))
-            plt.colorbar()
-            plt.show()
+        #     plt.imshow(prop_dm_phase)#,vmin=-numpy.pi,vmax=numpy.pi)
+        #     plt.title('phase after correction at dm : {}'.format(i))
+        #     plt.colorbar()
+        #     plt.show()
 
         if i==(scrnNo-1):
             z = scrnAlts[-1] - ht_final
@@ -1326,9 +1408,12 @@ def physical_correction_propagation(
         mean_phase = np.sum((EFieldBuf)[(A-B)//2:(A+B)//2,
                                                     (A-B)//2:(A+B)//2])/np.sum(output_mask)
         
-        prop_dm_phase = np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        # prop_dm_phase = np.unwrap(np.unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
+        #                                             (A-B)//2:(A+B)//2]
+        #                             /mean_phase),axis=0),axis=1)
+        prop_dm_phase = my_unwrap(np.angle((EFieldBuf)[(A-B)//2:(A+B)//2,
                                                     (A-B)//2:(A+B)//2]
-                                    /mean_phase)
+                                    /mean_phase))
         
         prop_dm_intensity = np.abs((EFieldBuf)[(A-B)//2:(A+B)//2,
                                             (A-B)//2:(A+B)//2])**2

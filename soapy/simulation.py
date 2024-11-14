@@ -241,7 +241,7 @@ class Sim(object):
 
             self.dms[dm] = dmObj(
                     self.config, n_dm=dm, wfss=self.wfss,
-                    mask=self.mask
+                    mask=self.mask, atms=self.atmos
                     )
 
             self.dmActCommands[dm] = numpy.empty(
@@ -336,7 +336,7 @@ class Sim(object):
         """
         t = time.time()
         logger.info("Making interaction Matrices...")
-
+        
         if forceNew:
             loadIMat=False
             loadCMat=False
@@ -347,7 +347,7 @@ class Sim(object):
             else:
                 loadIMat=True
                 loadCMat=True
-
+        
         self.recon.makeCMat(loadIMat=loadIMat,loadCMat=loadCMat,
                 callback=self.addToGuiQueue, progressCallback=progressCallback,
                 imat_to_load=imat_to_load,cmat_to_load=cmat_to_load)
@@ -537,7 +537,7 @@ class Sim(object):
                         dmCommands[ self.dmAct1[dm]:
                                     self.dmAct1[dm]+self.dms[dm].n_valid_actuators])
                 if self.config.dms[dm].type == 'Aberration':
-                    correction_buffer[dm] = self.dms[dm].dmFrame(0)
+                    correction_buffer[dm] = self.dms[dm].dmFrame('flat')
 
         self.Tdm += time.time() - t
         return correction_buffer
@@ -626,9 +626,18 @@ class Sim(object):
         self.printOutput(self.iters, strehl=True)
 
         self.addToGuiQueue()
+        
+        if self.run_away == True:
+            print('You shouldnt be here')
+        
+        if self.run_away == False:
+            if (self.dmCommands > self.command_bound).any():
+                # self.go = False
+                print('dm strokes too large at {:} iteration.'.format(self.iters))
+                self.run_away = True
+                self.run_away_iteration = self.iters
 
         self.iters += 1
-
 
     def aoloop(self):
         """
@@ -636,7 +645,11 @@ class Sim(object):
 
         Runs a WFS iteration, reconstructs the phase, runs DMs and finally the science cameras. Also makes some nice output to the console and can add data to the Queue for the GUI if it has been requested. Repeats for nIters.
         """
-
+        
+        self.command_bound = ((0.134*(self.config.tel.telDiam/self.config.atmos.r0)**(5./3.))**0.5
+                              * self.config.wfss[0].wavelength / (2*numpy.pi)) * 5 / 1e-9
+        self.run_away = False
+        self.run_away_iteration = -1
         self.go = True
         try:
             while self.iters < self.config.sim.nIters:
@@ -1005,31 +1018,44 @@ class Sim(object):
         if self.config.sim.simName!=None:
 
             if self.config.sim.saveSlopes:
+                if self.run_away:
+                    self.allSlopes[self.run_away_iteration + 1 : ] = numpy.nan
                 fits.writeto(
                         self.path+"/slopes.fits", self.allSlopes,
                         header=self.config.sim.saveHeader, overwrite=True)
 
             if self.config.sim.saveDmCommands:
+                if self.run_away:
+                    self.allDmCommands[self.run_away_iteration + 1 : ] = numpy.nan
                 fits.writeto(
                         self.path+"/dmCommands.fits",
                         self.allDmCommands, header=self.config.sim.saveHeader,
                         overwrite=True)
 
             if self.config.sim.saveLgsPsf:
+                if self.run_away:
+                    self.lgsPsfs[self.run_away_iteration + 1 : ] = numpy.nan
                 fits.writeto(
                         self.path+"/lgsPsf.fits", self.lgsPsfs,
                         header=self.config.sim.saveHeader, overwrite=True)
 
             if self.config.sim.saveWfe:
+                if self.run_away:
+                    self.WFE[self.run_away_iteration + 1 : ] = numpy.nan
                 fits.writeto(
                         self.path+"/WFE.fits", self.WFE,
                         header=self.config.sim.saveHeader, overwrite=True)
             if self.config.sim.saveRytov:
+                if self.run_away:
+                    self.rytov[self.run_away_iteration + 1 : ] = numpy.nan
                 fits.writeto(
                         self.path+"/rytov.fits", self.rytov,
                         header=self.config.sim.saveHeader, overwrite=True)
 
             if self.config.sim.saveStrehl:
+                if self.run_away:
+                    self.instStrehl[self.run_away_iteration + 1 : ] = numpy.nan
+                    self.longStrehl[self.run_away_iteration + 1 : ] = numpy.nan
                 fits.writeto(
                         self.path+"/instStrehl.fits", self.instStrehl,
                         header=self.config.sim.saveHeader, overwrite=True)
@@ -1039,6 +1065,8 @@ class Sim(object):
 
             if self.config.sim.saveSciRes:
                 for i in xrange(self.config.sim.nSci):
+                    if self.run_away:
+                        self.sciPhase[i][self.run_away_iteration + 1 : ] = numpy.nan + 1j*numpy.nan
                     fits.writeto(self.path+"/sciResidual_%02d.fits"%i,
                                 numpy.array([self.sciPhase[i].real,self.sciPhase[i].imag]),
                                 header=self.config.sim.saveHeader,
@@ -1046,6 +1074,8 @@ class Sim(object):
 
             if self.config.sim.saveSciPsf:
                 for i in xrange(self.config.sim.nSci):
+                    if self.run_away:
+                        self.sciImgs[i][self.run_away_iteration + 1 : ] = numpy.nan
                     fits.writeto(self.path+"/sciPsf_%02d.fits"%i,
                                         self.sciImgs[i],
                                         header=self.config.sim.saveHeader,
@@ -1053,6 +1083,8 @@ class Sim(object):
 
             if self.config.sim.saveInstPsf:
                 for i in xrange(self.config.sim.nSci):
+                    if self.run_away:
+                        self.sciImgsInst[i][self.run_away_iteration + 1 : ] = numpy.nan
                     fits.writeto(self.path+"/sciPsfInst_%02d.fits"%i,
                                  self.sciImgsInst[i],
                                  header=self.config.sim.saveHeader,
@@ -1060,13 +1092,12 @@ class Sim(object):
 
             if self.config.sim.saveInstScieField:
                 for i in xrange(self.config.sim.nSci):
+                    if self.run_away:
+                        self.scieFieldInst[i][self.run_away_iteration + 1 : ] = numpy.nan + 1j*numpy.nan
                     fits.writeto(self.path+"/scieFieldInst_%02d_real.fits"%i,
                                  self.scieFieldInst[i].real,
                                  header=self.config.sim.saveHeader,
                                  overwrite=True )
-
-            if self.config.sim.saveInstScieField:
-                for i in xrange(self.config.sim.nSci):
                     fits.writeto(self.path+"/scieFieldInst_%02d_imag.fits"%i,
                                  self.scieFieldInst[i].imag,
                                  header=self.config.sim.saveHeader,
@@ -1090,7 +1121,8 @@ class Sim(object):
                     for i in range(1, self.iters):
                         wfs_cube[i, :, :] = fits.getdata(
                             self.path + "/wfsFPFrames/wfs-%d_frame-%d.fits" % (nwfs, i))
-
+                    if self.run_away:
+                        self.wfs_cube[self.run_away_iteration + 1 : ] = numpy.nan
                     fits.writeto(self.path + "/wfs_frames_%02d.fits" % (nwfs),
                                  wfs_cube,
                                  header=self.config.sim.saveHeader,

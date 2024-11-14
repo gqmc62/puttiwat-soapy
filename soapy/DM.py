@@ -76,7 +76,7 @@ class DM(object):
         mask (ndarray, optional): An array or size (simConfig.simSize, simConfig.simSize) which is 1 at the telescope aperture and 0 else-where. If None then a circle is generated.
     """
 
-    def __init__ (self, soapy_config, n_dm=0, wfss=None, mask=None):
+    def __init__ (self, soapy_config, n_dm=0, wfss=None, mask=None, atms=None):
 
         # Sort out some required attributes
         self.soapy_config = soapy_config
@@ -92,6 +92,8 @@ class DM(object):
         self.diameter = self.config.diameter
         self.telescope_diameter = self.soapy_config.tel.telDiam
         
+        self.random_seed = self.config.random_seed
+        
         # if self.config.type == 'Aberration':
         #     if (self.config.subtype == 'Zernike') or (self.config.subtype == 'OneZernike'):
         #         self.diameter *= numpy.sqrt(2)
@@ -99,6 +101,7 @@ class DM(object):
         
 
         self.wfss = wfss
+        self.atms = atms
 
         # If supplied use the mask
         if numpy.any(mask):
@@ -163,7 +166,9 @@ class DM(object):
 
         Parameters:
             dmCommands (ndarray): A 1-dimensional vector of the multiplying factor of each DM influence function
-            closed (bool, optional): Specifies how to great gain. If ``True'' (closed) then ``dmCommands'' are multiplied by gain and summed with previous commands. If ``False'' (open), then ``dmCommands'' are multiplied by gain, and summed withe previous commands multiplied by (1-gain).
+            closed (bool, optional): Specifies how to great gain.
+            If ``True'' (closed) then ``dmCommands'' are multiplied by gain and summed with previous commands.
+            If ``False'' (open), then ``dmCommands'' are multiplied by gain, and summed withe previous commands multiplied by (1-gain).
 
         Returns:
             ndarray: A 2-d array with the DM shape
@@ -555,421 +560,266 @@ class Aberration(DM):
         self.n_active_actuators = 0
         self.n_valid_actuators = 0
         
+        if self.config.subtype == 'OneZernike':
+            pass
+        if self.config.subtype == 'Atmosphere':
+            self.makeATM()
+        if self.config.subtype == 'Zernike':
+            self.makeZModes()
+            self.makeNollVariances()
+        if self.config.subtype == 'Zernike_no_tip_tilt':
+            self.makeZModes()
+            self.makeNollVariances()
+        if self.config.subtype == 'MagicDM':
+            self.makeATM()
+        if self.config.subtype == 'MagicDM_no_tip_tilt':
+            self.makeATM()
+            self.makeTipTiltPistonPupil()
+            
         if self.config.subtype == 'Atmosphere_perfect_DM':
             xActs = self.dmConfig.nxActuators
             self.spcing = self.nx_dm_elements/float(xActs - 1)
+            self.makeATM()
         if self.config.subtype == 'Atmosphere_perfect_DM_no_tip_tilt':
             xActs = self.dmConfig.nxActuators
             self.spcing = self.nx_dm_elements/float(xActs - 1)
+            self.makeATM()
+            self.makeTipTiltPistonPupil()
         
         return self.n_active_actuators
     
-    def makeDMFrame(self,actCoeffs=0):
+    def makeDMFrame(self,actCoeffs='flat'):
         if self.config.r0 == numpy.inf:
             self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
             return self.aberration
+        if actCoeffs == 'flat':
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
         if self.config.subtype == 'OneZernike':
-            aberration = self.makeOneZernikeAberration(actCoeffs=actCoeffs)
+            self.aberration = self.makeOneZernikeAberration(actCoeffs=actCoeffs)
         if self.config.subtype == 'Atmosphere':
-            aberration = self.makeAtmosphereAberration(actCoeffs=actCoeffs)
+            self.aberration = self.makeAtmosphereAberration(actCoeffs=actCoeffs)
         if self.config.subtype == 'Zernike':
-            aberration = self.makeZernikeAberration(actCoeffs=actCoeffs)
+            self.aberration = self.makeZernikeAberration(actCoeffs=actCoeffs)
         if self.config.subtype == 'Zernike_no_tip_tilt':
-            aberration = self.makeZernikeAberration_no_tip_tilt(actCoeffs=actCoeffs)
+            self.aberration = self.makeZernikeAberration_no_tip_tilt(actCoeffs=actCoeffs)
         if self.config.subtype == 'Atmosphere_perfect_DM':
-            aberration = self.makeAtmosphereAberration_perfect_DM(actCoeffs=actCoeffs)
+            self.aberration = self.makeAtmosphereAberration_perfect_DM(actCoeffs=actCoeffs)
         if self.config.subtype == 'Atmosphere_perfect_DM_no_tip_tilt':
-            aberration = self.makeAtmosphereAberration_perfect_DM_no_tip_tilt(actCoeffs=actCoeffs)
+            self.aberration = self.makeAtmosphereAberration_perfect_DM_no_tip_tilt(actCoeffs=actCoeffs)
+        if self.config.subtype == 'MagicDM':
+            self.aberration = self.makeMagicDM(actCoeffs=actCoeffs)
+        if self.config.subtype == 'MagicDM_no_tip_tilt':
+            self.aberration = self.makeMagicDM_no_tip_tilt(actCoeffs=actCoeffs)
         
-        return aberration
+        return self.aberration
     
-    def makeOneZernikeAberration(self,actCoeffs=0):
-        try:
-            self.noll_variance
-        except:
-            self.noll_variance = get_noll_variance(
-                self.diameter,self.config.r0,self.config.L0,self.config.nollMode)
+    def makeTipTiltPistonPupil(self):
+        self.PUPIL = aotools.zernike.zernike_noll(1, self.nx_dm_elements, 0)
+        self.PISTON = self.PUPIL / (self.PUPIL.flatten().T@self.PUPIL.flatten())**0.5
+        self.TIP =  aotools.zernike.zernike_noll(2, self.nx_dm_elements, 0)
+        self.TILT = aotools.zernike.zernike_noll(3, self.nx_dm_elements, 0)
+        self.TIP /= (self.TIP.flatten().T@self.TIP.flatten())**0.5
+        self.TILT /= (self.TILT.flatten().T@self.TILT.flatten())**0.5
+        return
+    
+    def makeZModes(self):
+        self.Z_modes = aotools.zernike.zernike_noll(self.config.nollMode - 1, self.nx_dm_elements, 0)
+        return
+    
+    def makeNollVariances(self):
+        self.noll_variances = numpy.zeros((self.config.nollMode - 1 - 2),dtype=float)
+        for i in numpy.arange(self.config.nollMode - 1 - 2):
+            self.noll_variances[i] = get_noll_variance(
+                self.diameter,self.config.r0,self.config.L0,i + 4)
+        return
+    
+    def makeATM(self):
+        # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
+        #     self.config.r0, self.config.L0)
+        self.atm_ab = atmosphere.InfinitePhaseScreen(
+            self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
+            self.config.r0, self.config.L0, wind_speed=0,
+            time_step=0, wind_direction=0, random_seed=self.random_seed,
+            n_columns=2)
+        for row in numpy.arange(self.nx_dm_elements):                    
+            self.atm_ab.add_row()
+        if self.random_seed is not None:
+            self.random_seed = numpy.random.randint(0,2**31)
+    
+    
+    
+    
+    def makeOneZernikeAberration(self,actCoeffs='shape'):
+        print('need to check this function: one zernike')
+        self.noll_variance = get_noll_variance(
+            self.diameter,self.config.r0,self.config.L0,self.config.nollMode)
         
-        if (actCoeffs == 0) and (self.config.nollMode != 1):
-            try:
-                aberration = self.aberration
-            except:
-                try:
-                    self.aberrationStrength
-                except:
-                    self.aberrationStrength = numpy.random.normal(0,self.noll_variance**0.5)
-                # aberrationStrength = self.noll_variance**0.5
-                # aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements), dtype=float)
-                # print(self.config.nollMode)
-                
-                aberration = aotools.zernike.zernike_noll(self.config.nollMode, self.nx_dm_elements, 0)
-                aberration *= (numpy.sqrt((numpy.pi * self.nx_dm_elements**2 / 4.)))
-                # aberration /= (self.telescope_diameter/self.pupil_size)
-                # aberration /= (aberration.flatten() * aberration.flatten()).sum()**0.5
-                aberration *= self.aberrationStrength#[*numpy.sqrt(numpy.sqrt(2)**(5./3.))
-                self.aberration = aberration
-                # print(self.noll_variance**0.5)
-                
-                # try:
-                #     self.plotted
-                # except:
-                #     # if self.config.type == 'Aberration':
-                #     plt.imshow(numpy.angle(numpy.exp(1j*aberration)))
-                #     plt.colorbar()
-                #     plt.show()
-                #     self.plotted = True
-            
-            return aberration
+        if (actCoeffs == 'shape') and (self.config.nollMode != 1):
+            numpy.random.seed(self.random_seed)
+            self.aberrationStrength = numpy.random.normal(0,self.noll_variance**0.5)
+            if self.random_seed is not None:
+                self.random_seed = numpy.random.randint(0,2**31)
+            aberration = aotools.zernike.zernike_noll(self.config.nollMode, self.nx_dm_elements, 0)
+            aberration *= (numpy.sqrt((numpy.pi * self.nx_dm_elements**2 / 4.)))
+            aberration *= self.aberrationStrength#[*numpy.sqrt(numpy.sqrt(2)**(5./3.))
+            self.aberration = aberration
+            return self.aberration
         else:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
-        
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
+    
     def makeZernikeAberration_no_tip_tilt(self,actCoeffs=0):
-        try:
-            self.noll_variances
-        except:
-            self.noll_variances = numpy.zeros((self.config.nollMode - 1 - 2),dtype=float)
-            for i in numpy.arange(self.config.nollMode - 1 - 2):
-                self.noll_variances[i] = get_noll_variance(
-                    self.diameter,self.config.r0,self.config.L0,i + 4)
+        print('need to check this function: zernike no tip tilt')
             
         # print(self.noll_variances,aberrationStrengths)
         # aberrationStrength = self.noll_variance**0.5
-        if (actCoeffs == 0) and (self.config.nollMode != 1):
-            try:
-                self.aberration
-            except:
-                try:
-                    self.aberrationStrength
-                except:
-                    try:
-                        self.random_seed
-                        if self.random_seed is not None:
-                            numpy.random.seed(self.random_seed)
-                            self.random_seed = None
-                    except:
-                        pass
-                    self.aberrationStrength = numpy.random.normal(numpy.zeros((self.config.nollMode - 1 - 2)),
-                                                             self.noll_variances**0.5)
-                
-                self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements), dtype=float)
-                
-                try:
-                    self.Z_modes
-                except:
-                    self.Z_modes = aotools.zernike.zernike_noll(i + 4, self.nx_dm_elements, 0)
+        if (actCoeffs == 'shape') and (self.config.nollMode != 1):
+            numpy.random.seed(self.random_seed)
+            self.aberrationStrength = numpy.random.normal(numpy.zeros((self.config.nollMode - 1 - 2)),
+                                                         self.noll_variances**0.5)
+            if self.random_seed is not None:
+                self.random_seed = numpy.random.randint(0,2**31)
+            
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements), dtype=float)
+            
 
-                for i in numpy.arange(self.config.nollMode - 1 - 2):               
-                    #temp /= (numpy.sqrt((numpy.pi * self.nx_dm_elements**2 / 4.)))
-                    # temp /= (self.telescope_diameter/self.pupil_size)
-                    self.aberration = self.Z_modes * self.aberrationStrength[i]#[*numpy.sqrt(numpy.sqrt(2)**(5./3.))
-                    # plt.imshow(temp);plt.title('mode:{:d}'.format(i+4));plt.show()
-                    self.aberration *= (500./(2.*numpy.pi))
-                    self.aberration
-                self.aberration
-                # try:
-                #     self.plotted
-                # except:
-                #     # if self.config.type == 'Aberration':
-                #     # plt.imshow(numpy.angle(numpy.exp(1j*aberration)))
-                #     plt.imshow(aberration)
-                #     plt.colorbar()
-                #     plt.show()
-                #     self.plotted = True
+            for i in numpy.arange(self.config.nollMode - 1 - 2):               
+                #temp /= (numpy.sqrt((numpy.pi * self.nx_dm_elements**2 / 4.)))
+                # temp /= (self.telescope_diameter/self.pupil_size)
+                self.aberration = self.Z_modes * self.aberrationStrength[i]#[*numpy.sqrt(numpy.sqrt(2)**(5./3.))
+                # plt.imshow(temp);plt.title('mode:{:d}'.format(i+4));plt.show()
+                self.aberration *= (500./(2.*numpy.pi))
+            # try:
+            #     self.plotted
+            # except:
+            #     # if self.config.type == 'Aberration':
+            #     # plt.imshow(numpy.angle(numpy.exp(1j*aberration)))
+            #     plt.imshow(aberration)
+            #     plt.colorbar()
+            #     plt.show()
+            #     self.plotted = True
             
             return self.aberration
         else:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
         
     def makeZernikeAberration(self,actCoeffs=0):
-        try:
-            self.noll_variances
-        except:
-            self.noll_variances = numpy.zeros((self.config.nollMode - 1 ),dtype=float)#- 2),dtype=float)
-            for i in numpy.arange(self.config.nollMode - 1 ):#- 2):
-                self.noll_variances[i] = get_noll_variance(
-                    self.diameter,self.config.r0,self.config.L0,i + 4 - 2)
-            
-        # print(self.noll_variances,aberrationStrengths)
-        # aberrationStrength = self.noll_variance**0.5
-        if (actCoeffs == 0) and (self.config.nollMode != 1):
-            try:
-                self.aberration
-            except:
-                try:
-                    self.aberrationStrength
-                except:
-                    try:
-                        self.random_seed
-                        if self.random_seed is not None:
-                            numpy.random.seed(self.random_seed)
-                            self.random_seed = None
-                    except:
-                        pass
-                    self.aberrationStrength = numpy.random.normal(numpy.zeros((self.config.nollMode - 1 )),#- 2)),
+        print('need to check this function: zernike')
+        if (actCoeffs == 'shape') and (self.config.nollMode != 1):
+            numpy.random.seed(self.random_seed)
+            self.aberrationStrength = numpy.random.normal(numpy.zeros((self.config.nollMode - 1 )),#- 2)),
                                                              self.noll_variances**0.5)
+            if self.random_seed is not None:
+                self.random_seed = numpy.random.randint(0,2**31)
                 
-                self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements), dtype=float)
-                
-                try:
-                    self.Z_modes
-                except:
-                    self.Z_modes = aotools.zernike.zernikeArray(self.config.nollMode, self.nx_dm_elements, 0)[1:]#3:]
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements), dtype=float)
 
-                self.aberration = ((self.aberrationStrength
-                                   * self.Z_modes.reshape(self.config.nollMode - 1 ,#- 2,
-                                                          self.nx_dm_elements
-                                                          *self.nx_dm_elements).T).T.sum(0)
-                                   ).reshape(self.nx_dm_elements,self.nx_dm_elements)
-                self.aberration *= (500./(2.*numpy.pi))
+            self.aberration = ((self.aberrationStrength
+                               * self.Z_modes.reshape(self.config.nollMode - 1 ,#- 2,
+                                                      self.nx_dm_elements
+                                                      *self.nx_dm_elements).T).T.sum(0)
+                               ).reshape(self.nx_dm_elements,self.nx_dm_elements)
+            self.aberration *= (500./(2.*numpy.pi))
                 
             
             return self.aberration
         else:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
     
     def makeAtmosphereAberration_no_tip_tilt(self,actCoeffs=0):
-        if (actCoeffs == 0):
-            try:
-                self.aberration
-                # return self.aberration
-            except:
-                try:
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    try:
-                        self.TIP
-                        self.TILT
-                        self.PUPIL
-                        self.PISTON
-                    except:
-                        self.PUPIL = aotools.zernike.zernike_noll(1, self.nx_dm_elements, 0)
-                        self.PISTON = self.PUPIL / (self.PUPIL.flatten().T@self.PUPIL.flatten())**0.5
-                        self.TIP =  aotools.zernike.zernike_noll(2, self.nx_dm_elements, 0)
-                        self.TILT = aotools.zernike.zernike_noll(3, self.nx_dm_elements, 0)
-                        self.TIP /= (self.TIP.flatten().T@self.TIP.flatten())**0.5
-                        self.TILT /= (self.TILT.flatten().T@self.TILT.flatten())**0.5
-                    aberration *= self.PUPIL
-                    piston = aberration.flatten().T@self.PISTON.flatten()
-                    tip = aberration.flatten().T@self.TIP.flatten()
-                    tilt = aberration.flatten().T@self.TILT.flatten()
-                    aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
-                    aberration *= self.PUPIL
-                    self.aberration = aberration
-                    # return self.aberration
-                except:
-                    # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
-                    try:
-                        self.random_seed
-                        if self.random_seed is not None:
-                            numpy.random.seed(self.random_seed)
-                            self.random_seed = None
-                    except:
-                        pass
-                    self.atm_ab = atmosphere.InfinitePhaseScreen(
-                        self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
-                        self.config.r0, self.config.L0, wind_speed=0,
-                        time_step=0, wind_direction=0, random_seed=None,
-                        n_columns=2)
-                    for row in numpy.arange(self.nx_dm_elements):                    
-                        self.atm_ab.add_row()
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    try:
-                        self.TIP
-                        self.TILT
-                        self.PUPIL
-                        self.PISTON
-                    except:
-                        self.PUPIL = aotools.zernike.zernike_noll(1, self.nx_dm_elements, 0)
-                        self.PISTON = self.PUPIL / (self.PUPIL.flatten().T@self.PUPIL.flatten())**0.5
-                        self.TIP =  aotools.zernike.zernike_noll(2, self.nx_dm_elements, 0)
-                        self.TILT = aotools.zernike.zernike_noll(3, self.nx_dm_elements, 0)
-                        self.TIP /= (self.TIP.flatten().T@self.TIP.flatten())**0.5
-                        self.TILT /= (self.TILT.flatten().T@self.TILT.flatten())**0.5
-                    aberration *= self.PUPIL
-                    piston = aberration.flatten().T@self.PISTON.flatten()
-                    tip = aberration.flatten().T@self.TIP.flatten()
-                    tilt = aberration.flatten().T@self.TILT.flatten()
-                    aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
-                    aberration *= self.PUPIL
-                    self.aberration = aberration
-                    #aberration *= (500/(2*numpy.pi))
-                # plt.imshow(aberration);plt.colorbar();plt.show()
+        print('need to check this function : atmos no tip tilt')
+        if (actCoeffs == 'shape'):
+            aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
+            aberration *= self.PUPIL
+            piston = aberration.flatten().T@self.PISTON.flatten()
+            tip = aberration.flatten().T@self.TIP.flatten()
+            tilt = aberration.flatten().T@self.TILT.flatten()
+            aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
+            aberration *= self.PUPIL
+            self.aberration = aberration
             return self.aberration
         else:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
     
     def makeAtmosphereAberration_perfect_DM_no_tip_tilt(self,actCoeffs=0):
-        if (actCoeffs == 0):
-            try:
-                self.aberration
-                # return self.aberration
-            except:
-                try:
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    try:
-                        self.TIP
-                        self.TILT
-                        self.PUPIL
-                        self.PISTON
-                    except:
-                        self.PUPIL = aotools.zernike.zernike_noll(1, self.nx_dm_elements, 0)
-                        self.PISTON = self.PUPIL / (self.PUPIL.flatten().T@self.PUPIL.flatten())**0.5
-                        self.TIP =  aotools.zernike.zernike_noll(2, self.nx_dm_elements, 0)
-                        self.TILT = aotools.zernike.zernike_noll(3, self.nx_dm_elements, 0)
-                        self.TIP /= (self.TIP.flatten().T@self.TIP.flatten())**0.5
-                        self.TILT /= (self.TILT.flatten().T@self.TILT.flatten())**0.5
-                    dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
-                    # dmpitch = self.config.r0
-                    aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
-                    aberration *= self.PUPIL
-                    piston = aberration.flatten().T@self.PISTON.flatten()
-                    tip = aberration.flatten().T@self.TIP.flatten()
-                    tilt = aberration.flatten().T@self.TILT.flatten()
-                    aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
-                    aberration *= self.PUPIL
-                    self.aberration = aberration
-                    try:
-                        self.TIP
-                        self.TILT
-                        self.PUPIL
-                        self.PISTON
-                    except:
-                        self.PUPIL = aotools.zernike.zernike_noll(1, self.nx_dm_elements, 0)
-                        self.PISTON = self.PUPIL / (self.PUPIL.flatten().T@self.PUPIL.flatten())**0.5
-                        self.TIP =  aotools.zernike.zernike_noll(2, self.nx_dm_elements, 0)
-                        self.TILT = aotools.zernike.zernike_noll(3, self.nx_dm_elements, 0)
-                        self.TIP /= (self.TIP.flatten().T@self.TIP.flatten())**0.5
-                        self.TILT /= (self.TILT.flatten().T@self.TILT.flatten())**0.5
-                    aberration *= self.PUPIL
-                    piston = aberration.flatten().T@self.PISTON.flatten()
-                    tip = aberration.flatten().T@self.TIP.flatten()
-                    tilt = aberration.flatten().T@self.TILT.flatten()
-                    aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
-                    aberration *= self.PUPIL
-                    self.aberration = aberration
-                    # return self.aberration
-                except:
-                    # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
-                    try:
-                        self.random_seed
-                        if self.random_seed is not None:
-                            numpy.random.seed(self.random_seed)
-                            self.random_seed = None
-                    except:
-                        pass
-                    self.atm_ab = atmosphere.InfinitePhaseScreen(
-                        self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
-                        self.config.r0, self.config.L0, wind_speed=0,
-                        time_step=0, wind_direction=0, random_seed=None,
-                        n_columns=2)
-                    for row in numpy.arange(self.nx_dm_elements):                    
-                        self.atm_ab.add_row()
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    try:
-                        self.TIP
-                        self.TILT
-                        self.PUPIL
-                        self.PISTON
-                    except:
-                        self.PUPIL = aotools.zernike.zernike_noll(1, self.nx_dm_elements, 0)
-                        self.PISTON = self.PUPIL / (self.PUPIL.flatten().T@self.PUPIL.flatten())**0.5
-                        self.TIP =  aotools.zernike.zernike_noll(2, self.nx_dm_elements, 0)
-                        self.TILT = aotools.zernike.zernike_noll(3, self.nx_dm_elements, 0)
-                        self.TIP /= (self.TIP.flatten().T@self.TIP.flatten())**0.5
-                        self.TILT /= (self.TILT.flatten().T@self.TILT.flatten())**0.5
-                    dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
-                    # dmpitch = self.config.r0
-                    aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
-                    aberration *= self.PUPIL
-                    piston = aberration.flatten().T@self.PISTON.flatten()
-                    tip = aberration.flatten().T@self.TIP.flatten()
-                    tilt = aberration.flatten().T@self.TILT.flatten()
-                    aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
-                    aberration *= self.PUPIL
-                    self.aberration = aberration
-                    #aberration *= (500/(2*numpy.pi))
-                # plt.imshow(aberration);plt.colorbar();plt.show()
+        # print('need to check this function: perfect dm no tip tilt')
+        if (actCoeffs == 'shape'):
+            aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
+            dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
+            aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
+            aberration *= self.PUPIL
+            piston = aberration.flatten().T@self.PISTON.flatten()
+            tip = aberration.flatten().T@self.TIP.flatten()
+            tilt = aberration.flatten().T@self.TILT.flatten()
+            aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
+            aberration *= self.PUPIL
+            self.aberration = aberration
             return self.aberration
         else:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
+        
+    def makeMagicDM_no_tip_tilt(self,actCoeffs=0):
+        print('need to check this function: magic no tip tilt')
+        if (actCoeffs == 'shape'):
+        
+            aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
+            dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
+            # dmpitch = self.config.r0
+            aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
+            aberration *= self.PUPIL
+            piston = aberration.flatten().T@self.PISTON.flatten()
+            tip = aberration.flatten().T@self.TIP.flatten()
+            tilt = aberration.flatten().T@self.TILT.flatten()
+            aberration -= (piston*self.PISTON + tip*self.TIP + tilt*self.TILT)
+            aberration *= self.PUPIL
+            self.aberration = aberration
+            return self.aberration
+        else:
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
     
     def makeAtmosphereAberration(self,actCoeffs=0):
-        if (actCoeffs == 0):
-            try:
-                self.aberration
-                # return self.aberration
-            except:
-                try:
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    
-                    self.aberration = aberration
-                    # return self.aberration
-                except:
-                    try:
-                        self.random_seed
-                        if self.random_seed is not None:
-                            numpy.random.seed(self.random_seed)
-                            self.random_seed = None
-                    except:
-                        pass
-                    # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
-                    self.atm_ab = atmosphere.InfinitePhaseScreen(
-                        self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
-                        self.config.r0, self.config.L0, wind_speed=0,
-                        time_step=0, wind_direction=0, random_seed=None,
-                        n_columns=2)
-                    for row in numpy.arange(self.nx_dm_elements):                    
-                        self.atm_ab.add_row()
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    
-                    self.aberration = aberration
-                    #aberration *= (500/(2*numpy.pi))
-                # plt.imshow(aberration);plt.colorbar();plt.show()
+        print('need to check this function: atmos')
+        if (actCoeffs == 'shape'):
+            aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
+            self.aberration = aberration
             return self.aberration
         else:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
     
     def makeAtmosphereAberration_perfect_DM(self,actCoeffs=0):
-        if (actCoeffs == 0):
-            try:
-                self.aberration
-                # return self.aberration
-            except:
-                try:
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
-                    # dmpitch = self.config.r0
-                    aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
-                    
-                    self.aberration = aberration
-                    
-                    # return self.aberration
-                except:
-                    # print(self.nx_dm_elements, self.telescope_diameter/self.pupil_size, self.config.r0, self.config.L0)
-                    try:
-                        self.random_seed
-                        if self.random_seed is not None:
-                            numpy.random.seed(self.random_seed)
-                            self.random_seed = None
-                    except:
-                        pass
-                    self.atm_ab = atmosphere.InfinitePhaseScreen(
-                        self.nx_dm_elements, self.telescope_diameter/self.pupil_size,
-                        self.config.r0, self.config.L0, wind_speed=0,
-                        time_step=0, wind_direction=0, random_seed=None,
-                        n_columns=2)
-                    for row in numpy.arange(self.nx_dm_elements):                    
-                        self.atm_ab.add_row()
-                    aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
-                    dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
-                    # dmpitch = self.config.r0
-                    aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
-                    
-                    self.aberration = aberration
-                    #aberration *= (500/(2*numpy.pi))
-                # plt.imshow(aberration);plt.colorbar();plt.show()
+        print('need to check this function: perfect dm')
+        if (actCoeffs == 'shape'):
+            aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
+            dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
+            aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
+            self.aberration = aberration
             return self.aberration
         else:
-            return numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
+        
+        
+    def makeMagicDM(self,actCoeffs=0):
+        print('need to check this function: magic')
+        if (actCoeffs == 'shape'):
+            self.atm_ab = self.atms.infinite_phase_screens[self.config.conjugateLayer]
+            aberration = numpy.copy(self.atm_ab.scrn) * (500/(2*numpy.pi))
+            dmpitch = self.spcing*self.telescope_diameter/self.pupil_size
+            aberration = perfect_dm(aberration,self.telescope_diameter/self.pupil_size,dmpitch)
+            self.aberration = aberration
+            return self.aberration
+        else:
+            self.aberration = numpy.zeros((self.nx_dm_elements,self.nx_dm_elements),dtype=float)
+            return self.aberration
+        
+    
 
 def perfect_dm(phase,delta,dm_pitch):
     N = phase.shape[0]

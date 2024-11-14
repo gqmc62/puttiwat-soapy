@@ -158,7 +158,8 @@ class atmos(object):
                 phase_screen = InfinitePhaseScreen(
                         self.scrn_size, self.pixel_scale, self.scrnStrengths[layer],
                         self.L0s[layer], self.windSpeeds[layer], self.looptime,
-                        self.windDirs[layer], random_seed=None)#self._R)
+                        self.windDirs[layer], random_seed=None,
+                        RMTT=self.config.removedTipTiltPiston, n=self.simConfig.pupilSize)#self._R)
                 for row in range(self.scrn_size):
                     phase_screen.add_row()
                 self.infinite_phase_screens.append(phase_screen)
@@ -266,6 +267,9 @@ class atmos(object):
                 self.xCoords[i] = numpy.arange(self.scrn_size).astype('float') + self.scrnPos[i][0]
                 self.yCoords[i] = numpy.arange(self.scrn_size).astype('float') + self.scrnPos[i][1]
 
+        if self.config.removedTipTiltPiston == True:
+            self.init_remove_tip_tilt_piston()
+            logger.debug("remove tip tilt of atmos only remove tip tilt over the on axis metapupil")
 
     def saveScrns(self, DIR):
         """
@@ -379,6 +383,9 @@ class atmos(object):
             # Finally, scale for r0 and turn to nm
             self.scrns[i] *= (self.scrnStrengths[i]/self.wholeScrnR0)**(-5./6.)
             self.scrns[i] *= (500/(2*numpy.pi))
+            
+        if self.config.removedTipTiltPiston == True:
+            self.scrns[i] = self.remove_tip_tilt_piston(self.scrns[i])
 
         return self.scrns
 
@@ -406,6 +413,48 @@ class atmos(object):
             self.scrns[i] *= (500./(2*numpy.pi))
 
         return self.scrns
+    
+    
+    def init_remove_tip_tilt_piston(self):
+        from aotools.functions.zernike import zernikeArray
+        N = self.scrn_size
+        n = self.simConfig.pupilSize
+        
+        ZMODES = zernikeArray(3,N)
+        zmodes = zernikeArray(3,n)
+        
+        self.TIP = ZMODES[2] / coef(ZMODES[2],ZMODES[2])**0.5
+        self.TILT = ZMODES[1] / coef(ZMODES[1],ZMODES[1])**0.5
+        self.PISTON = ZMODES[0] / coef(ZMODES[0],ZMODES[0])**0.5
+        self.tip = zmodes[2] / coef(zmodes[2],zmodes[2])**0.5
+        self.tilt = zmodes[1] / coef(zmodes[1],zmodes[1])**0.5
+        self.piston = zmodes[0] / coef(zmodes[0],zmodes[0])**0.5
+        
+        return
+    
+    def remove_tip_tilt_piston(self,PHASE):
+        
+        N = self.scrn_size
+        n = self.simConfig.pupilSize
+        
+        A = int((N - n) // 2)
+        B = int((N + n) // 2)
+        
+        phase = PHASE[A:B,A:B]
+        
+        tilt = coef(self.tilt,phase)
+        tip = coef(self.tip,phase)
+        piston = coef(self.piston,phase)
+        
+        TILT = tilt * (N/n)**2
+        TIP = tip * (N/n)**2
+        PISTON  = piston * (N/n)**2
+        
+        REMOVED = PHASE - TIP*self.TIP - TILT*self.TILT - PISTON*self.PISTON
+        # removed = phase - tip*self.tip - tilt*self.tilt - piston*self.piston
+        print('yed')
+        return REMOVED
+    
 
 
 def pool_ft_sh_phase_screen(args):
@@ -474,14 +523,19 @@ def makePhaseScreens(
 class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
     def __init__(
             self, nx_size, pixel_scale, r0, L0, wind_speed,
-            time_step, wind_direction, random_seed=None, n_columns=2):
+            time_step, wind_direction, random_seed=None, n_columns=2, RMTT=False, n=None):
         if wind_direction not in (0, 90, 180, 270):
             # Have to make screne bigger to cope with rotaation
             self.nx_output_size = nx_size
             nx_size = int(numpy.ceil(2 * 2**0.5 * nx_size))
         else:
             self.nx_output_size = nx_size
-
+        
+        self.N = nx_size
+        self.n = n
+        self.RMTT = RMTT
+        if r0 == numpy.inf:
+            r0 = nx_size*pixel_scale*1000
         super(InfinitePhaseScreen, self).__init__(nx_size, pixel_scale, r0, L0, random_seed, n_columns)
 
         self.wind_speed = wind_speed
@@ -501,6 +555,12 @@ class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
 
         self.output_screen = numpy.zeros((self.nx_size, self.nx_size))
         self.output_rotation_screen = numpy.zeros((self.nx_output_size, self.nx_output_size))
+        
+        if self.RMTT == True:
+            self.init_remove_tip_tilt_piston()
+            logger.debug("remove tip tilt of atmos only remove tip tilt over the on axis metapupil")
+
+        self.move_screen()
 
     def move_screen(self):
 
@@ -524,7 +584,10 @@ class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
                 self._scrn, self.interp_coords - self.float_position, self.interp_coords, self.output_screen)
 
         self.rotate_screen()
-
+        
+        if self.RMTT == True:
+            self.output_rotation_screen = self.remove_tip_tilt_piston(self.output_rotation_screen)
+        
         return self.output_rotation_screen
 
     def rotate_screen(self):
@@ -573,6 +636,52 @@ class InfinitePhaseScreen(infinitephasescreen.PhaseScreenKolmogorov):
         #         delta_r = numpy.sqrt(delta_x**2 + delta_y**2)
         #
         #         self.seperations[i, j] = delta_r
+        
+        
+        
+    def init_remove_tip_tilt_piston(self):
+        from aotools.functions.zernike import zernikeArray
+        N = self.N
+        n = self.n
+        
+        ZMODES = zernikeArray(3,N)
+        zmodes = zernikeArray(3,n)
+        
+        self.TIP = ZMODES[2] / coef(ZMODES[2],ZMODES[2])**0.5
+        self.TILT = ZMODES[1] / coef(ZMODES[1],ZMODES[1])**0.5
+        self.PISTON = ZMODES[0] / coef(ZMODES[0],ZMODES[0])**0.5
+        self.PUPIL = ZMODES[0]
+        self.tip = zmodes[2] / coef(zmodes[2],zmodes[2])**0.5
+        self.tilt = zmodes[1] / coef(zmodes[1],zmodes[1])**0.5
+        self.piston = zmodes[0] / coef(zmodes[0],zmodes[0])**0.5
+        
+        return
+    
+    def remove_tip_tilt_piston(self,PHASE):
+        
+        N = self.N
+        n = self.n
+        
+        A = int((N - n) // 2)
+        B = int((N + n) // 2)
+        
+        phase = PHASE[A:B,A:B]
+        
+        tilt = coef(self.tilt,phase)
+        tip = coef(self.tip,phase)
+        piston = coef(self.piston,phase)
+        
+        TILT = tilt * (N/n)**2
+        TIP = tip * (N/n)**2
+        PISTON  = piston * (N/n)**2
+        
+        REMOVED = (PHASE - TIP*self.TIP - TILT*self.TILT - PISTON*self.PISTON)*self.PUPIL
+        # removed = phase - tip*self.tip - tilt*self.tilt - piston*self.piston
+        return REMOVED
+
+
+def coef(A,B):
+    return (A.flatten()@B.flatten())
 
 import numba
 @numba.jit(nopython=True)

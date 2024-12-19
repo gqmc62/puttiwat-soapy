@@ -1,0 +1,99 @@
+Atmosphere:
+  L0:
+  - 4
+  infinite: true
+  r0: 0.05
+  removedTipTiltPiston: true
+  scrnHeights:
+  - 0
+  scrnNo: 1
+  scrnStrengths:
+  - 1
+  windDirs:
+  - 0
+  windSpeeds:
+  - 0
+  - 0
+DM:
+  0:
+    altitude: 0
+    closed: true
+    gain: 0.4
+    iMatValue: 0.002
+    type: TT
+  1:
+    altitude: 0
+    closed: true
+    gain: 0.4
+    iMatValue: 1
+    type: FastPiezo
+  2:
+    L0: 8.0
+    altitude: 0.0
+    calibrate: true
+    closed: true
+    iMatValue: 1
+    nollMode: 45
+    r0: .inf
+    subtype: Atmosphere_perfect_DM_no_tip_tilt
+    type: Aberration
+Reconstructor:
+  analyseAberationCalib: true
+  gain: 0.4
+  svdConditioning: 0.05
+  type: MVM
+Science:
+  0:
+    FOV: 20
+    fftOversamp: 2
+    fftwFlag: FFTW_MEASURE
+    fftwThreads: 8
+    position:
+    - 0
+    - 0
+    propagationMode: Physical
+    pxls: 200
+    wavelength: 500e-9
+Telescope:
+  mask: circle
+  obsDiam: 0.0
+  telDiam: 0.4
+WFS:
+  0:
+    GSHeight: 0
+    GSMag: 3
+    GSPosition:
+    - 0
+    - 0
+    fftOversamp: 1
+    fftwFlag: FFTW_MEASURE
+    fftwThreads: 8
+    nxSubaps: 8
+    propagationMode: Physical
+    pxlsPerSubap: 20
+    subapFOV: 21
+    subapThreshold: 0.9
+    type: ShackHartmann
+    wavelength: 500e-9
+loopTime: 0.001
+nDM: 3
+nGS: 1
+nIters: 1
+nSci: 1
+pupilSize: 128
+saveAtmSlopes: true
+saveCalib: true
+saveDmCommands: true
+saveInstPsf: false
+saveInstScieField: false
+saveLgsPsf: false
+saveRytov: true
+saveSciPsf: true
+saveSciRes: true
+saveSlopes: true
+saveStrehl: true
+saveWfe: true
+saveWfsFrames: false
+simName: bad_IM-rytov0.00-AS0%
+threads: 8
+verbosity: 0
